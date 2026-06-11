@@ -30,3 +30,17 @@ Run the top-level game binary:
 ```sh
 cargo run -p space-game
 ```
+
+## OpenSpec
+
+This project uses [OpenSpec](https://openspec.dev/) for spec-driven development. The Nix dev shell provides the `openspec` CLI.
+
+Useful commands:
+
+```sh
+openspec list
+openspec list --specs
+openspec validate --all
+```
+
+Codex is configured through project-local OpenSpec skills in `.codex/skills/`. OpenSpec also generated global Codex prompts in `/home/rob/.codex/prompts/`; this repository mirrors them in `.codex/prompts/` so Codex builds that discover project-local prompts can expose `/opsx:*` commands.

@@ -3,9 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    openspec.url = "github:Fission-AI/OpenSpec";
   };
 
-  outputs = { nixpkgs, ... }:
+  outputs = { nixpkgs, openspec, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -16,18 +17,19 @@
 
       forAllSystems = f:
         nixpkgs.lib.genAttrs systems (system:
-          f (import nixpkgs {
+          f system (import nixpkgs {
             inherit system;
           }));
     in
     {
-      devShells = forAllSystems (pkgs: {
+      devShells = forAllSystems (system: pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
             cargo
             rustc
             rustfmt
             clippy
+            openspec.packages.${system}.default
           ];
         };
       });
