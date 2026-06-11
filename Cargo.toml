@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/space-game",
+]
+resolver = "2"
