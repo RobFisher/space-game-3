@@ -1,0 +1,111 @@
+[[objects]]
+id = "sun"
+name = "Sun"
+kind = "star"
+
+[objects.source]
+type = "static_state"
+position_km = { x = 0.0, y = 0.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+frame = { type = "solar_system_barycentric_j2000" }
+
+[[objects]]
+id = "mercury"
+name = "Mercury"
+kind = "planet"
+
+[objects.source]
+type = "circular_orbit"
+parent = "sun"
+radius_km = 57_900_000.0
+period_seconds = 7_600_543.8
+inclination_deg = 7.0
+raan_deg = 48.3
+phase_at_epoch_deg = 15.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "venus"
+name = "Venus"
+kind = "planet"
+
+[objects.source]
+type = "circular_orbit"
+parent = "sun"
+radius_km = 108_200_000.0
+period_seconds = 19_414_149.6
+inclination_deg = 3.4
+raan_deg = 76.7
+phase_at_epoch_deg = 85.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+
+[objects.source]
+type = "circular_orbit"
+parent = "sun"
+radius_km = 149_597_870.7
+period_seconds = 31_558_149.8
+inclination_deg = 0.0
+raan_deg = 0.0
+phase_at_epoch_deg = 180.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "mars"
+name = "Mars"
+kind = "planet"
+
+[objects.source]
+type = "circular_orbit"
+parent = "sun"
+radius_km = 227_900_000.0
+period_seconds = 59_354_032.0
+inclination_deg = 1.85
+raan_deg = 49.6
+phase_at_epoch_deg = 250.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "ceres"
+name = "Ceres"
+kind = "dwarf_planet"
+
+[objects.source]
+type = "circular_orbit"
+parent = "sun"
+radius_km = 413_700_000.0
+period_seconds = 145_297_728.0
+inclination_deg = 10.6
+raan_deg = 80.3
+phase_at_epoch_deg = 320.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "luna"
+name = "Luna"
+kind = "moon"
+
+[objects.source]
+type = "circular_orbit"
+parent = "earth"
+radius_km = 384_400.0
+period_seconds = 2_360_591.5
+inclination_deg = 5.1
+raan_deg = 125.0
+phase_at_epoch_deg = 30.0
+epoch = "2097-01-01T00:00:00Z"
+
+[[objects]]
+id = "demo-station"
+name = "Demo Station"
+kind = "station"
+
+[objects.source]
+type = "fixed_offset"
+parent = "earth"
+offset_km = { x = 42_000.0, y = 0.0, z = 0.0 }
+frame = { type = "parent_centered_inertial", value = "earth" }

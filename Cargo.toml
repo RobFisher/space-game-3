@@ -2,5 +2,8 @@
 members = [
     "crates/space-game",
     "crates/space-game-ephemeris",
+    "crates/space-game-protocol",
+    "crates/space-server",
+    "crates/space-client-tui",
 ]
 resolver = "2"

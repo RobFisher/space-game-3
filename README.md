@@ -1,6 +1,30 @@
 # Space Game
 
-A Rust TUI game project organized as a monorepo workspace.
+A Rust TUI space-game prototype organized as a monorepo workspace.
+
+## Current Status
+
+The current build is a minimal networked vertical slice rather than a full game. It has:
+
+- a reusable ephemeris library for fictional solar-system objects,
+- a local authoritative WebSocket server,
+- a shared JSON client/server protocol,
+- and a Ratatui TUI client.
+
+The demo lets a client connect to the local server, list fictional solar-system objects, query distances from a fixed demo observer, view connection/game-time status, and exit cleanly.
+
+Supported TUI commands include:
+
+```text
+help
+objects
+distance mars
+distances
+distances --limit 10
+distances --sort distance
+status
+quit
+```
 
 ## Project Layout
 
@@ -8,6 +32,9 @@ This repository is a Cargo workspace. Crates live under `crates/`:
 
 - `crates/space-game` is the top-level game binary. It will integrate the other crates and provide the TUI application.
 - `crates/space-game-ephemeris` is a reusable ephemeris library. Its Cargo package name uses hyphens, and Rust code imports it as `space_game_ephemeris`.
+- `crates/space-game-protocol` contains shared serializable protocol types for the client/server boundary.
+- `crates/space-server` runs the local authoritative WebSocket server and owns ephemeris queries.
+- `crates/space-client-tui` runs the Ratatui client.
 
 Design files and implementation notes for a crate should live alongside that crate when they are crate-specific. Shared design notes can go in a top-level `docs/` directory when needed.
 
@@ -25,7 +52,27 @@ Build the workspace:
 cargo build
 ```
 
-Run the top-level game binary:
+Run tests:
+
+```sh
+cargo test
+```
+
+Run the local server in one terminal:
+
+```sh
+cargo run -p space-server
+```
+
+Run the TUI client in another terminal:
+
+```sh
+cargo run -p space-client-tui
+```
+
+The client connects to `ws://127.0.0.1:4000/ws` by default.
+
+The older top-level placeholder binary can still be run with:
 
 ```sh
 cargo run -p space-game
