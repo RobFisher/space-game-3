@@ -52,6 +52,15 @@ The ephemeris crate SHALL resolve fixed-offset objects by resolving their parent
 - **WHEN** fixed-offset parent references create a dependency cycle
 - **THEN** the system returns a `CyclicDependency` error instead of recursing indefinitely
 
+### Requirement: Static state resolution
+
+The ephemeris crate SHALL resolve static-state objects as fixed inertial positions and velocities at the requested epoch.
+
+#### Scenario: Resolve static state object
+
+- **WHEN** a static-state object is queried at a valid `GameTime`
+- **THEN** the system returns the configured position and velocity with the requested epoch
+
 ### Requirement: Circular orbit state resolution
 
 The ephemeris crate SHALL resolve circular-orbit objects by computing parent-relative position and velocity from radius, period, inclination, right ascension of ascending node, phase at epoch, and elapsed time, then adding the parent global state.

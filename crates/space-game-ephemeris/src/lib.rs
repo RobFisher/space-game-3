@@ -1,16 +1,25 @@
 //! Ephemeris calculations and data structures for space simulations.
 
-/// Returns the library name.
-pub fn crate_name() -> &'static str {
-    "space_game_ephemeris"
-}
+mod error;
+mod manifest;
+mod object;
+mod providers;
+mod registry;
+mod resolution;
+mod source;
+mod state;
+mod time;
+mod vector;
+mod world;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reports_crate_name() {
-        assert_eq!(crate_name(), "space_game_ephemeris");
-    }
-}
+pub use crate::error::EphemerisError;
+pub use crate::manifest::{KernelEntry, KernelKind, KernelManifest};
+pub use crate::object::{
+    GameplayMetadata, ObjectDefinition, ObjectId, ObjectKind, ObjectSummary, PhysicalProperties,
+};
+pub use crate::registry::ObjectRegistry;
+pub use crate::source::{EphemerisSource, InterpolationMode, TrajectorySample};
+pub use crate::state::{EphemerisQuality, FrameId, StateVector};
+pub use crate::time::GameTime;
+pub use crate::vector::{Vec3Km, Vec3KmPerSec};
+pub use crate::world::{SolarSystem, SolarSystemBuilder};

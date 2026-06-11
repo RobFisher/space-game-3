@@ -42,11 +42,12 @@ Alternative considered: separate registries for real bodies and game objects. Th
 
 This change implements:
 
+- `StaticState`
 - `FixedOffset`
 - `CircularOrbit`
 - `SampledTrajectory` with linear interpolation
 
-These sources can be tested without kernels and are enough to model early fictional stations, routes, mock parents, and deterministic gameplay fixtures.
+These sources can be tested without kernels and are enough to model early fictional stations, routes, mock parents, inertial fixture bodies, and deterministic gameplay fixtures.
 
 Alternative considered: start with ANISE real-body integration. That creates immediate value for planets, but it depends on kernel asset choices, text-kernel conversion behavior, and downloader decisions that are still better handled in a later, focused change.
 
