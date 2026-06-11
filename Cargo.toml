@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "crates/space-game",
+    "crates/space-game-ephemeris",
 ]
 resolver = "2"

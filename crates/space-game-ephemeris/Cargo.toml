@@ -1,0 +1,10 @@
+[package]
+name = "space-game-ephemeris"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "space_game_ephemeris"
+path = "src/lib.rs"
+
+[dependencies]
