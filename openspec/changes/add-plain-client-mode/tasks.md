@@ -28,4 +28,4 @@
 - [x] 5.1 Add an automated test or documented manual smoke command that runs plain mode against a running or spawned server.
 - [x] 5.2 Update `README.md` with examples for `--plain --command` and stdin-driven plain mode.
 - [x] 5.3 Run relevant checks, including `cargo test` and `openspec validate --all`.
-- [ ] 5.4 Commit the implementation work in focused chunks, including a commit after tests/specs/docs are updated.
+- [x] 5.4 Commit the implementation work in focused chunks, including a commit after tests/specs/docs are updated.
