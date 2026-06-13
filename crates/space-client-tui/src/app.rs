@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{io, time::Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use space_game_protocol::{
@@ -6,7 +6,10 @@ use space_game_protocol::{
     StatusDto,
 };
 
-use crate::command_input::{CommandInputController, ReverseSearchView};
+use crate::{
+    command_input::{CommandInputController, ReverseSearchView},
+    history::CommandHistoryStore,
+};
 
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:4000/ws";
 pub const SILENT_TIME_SYNC_SEQ: u64 = 0;
@@ -21,6 +24,7 @@ pub struct ClientApp {
     pub command_input: CommandInputController,
     pub next_seq: u64,
     pub should_quit: bool,
+    history_store: CommandHistoryStore,
     clock_sample: Option<ClientClockSample>,
 }
 
@@ -66,8 +70,20 @@ impl ClientApp {
             command_input: CommandInputController::default(),
             next_seq: 1,
             should_quit: false,
+            history_store: CommandHistoryStore::disabled(),
             clock_sample: None,
         }
+    }
+
+    pub fn with_history_store(
+        server_url: impl Into<String>,
+        history_store: CommandHistoryStore,
+    ) -> io::Result<Self> {
+        let mut app = Self::with_server_url(server_url);
+        let history = history_store.load()?;
+        app.command_input.set_history(history);
+        app.history_store = history_store;
+        Ok(app)
     }
 
     pub fn input_value(&self) -> &str {
@@ -142,6 +158,13 @@ impl ClientApp {
         if matches!(text.as_str(), "quit" | "exit") {
             self.should_quit = true;
             return None;
+        }
+
+        if self.command_input.take_history_dirty() {
+            let history = self.command_input.history().to_vec();
+            if let Err(err) = self.history_store.save(&history) {
+                self.push_output(format!("Unable to save command history: {err}"));
+            }
         }
 
         let seq = self.next_seq;
@@ -282,12 +305,25 @@ impl ClientApp {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        env, fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use space_game_protocol::{
-        DistanceResultDto, ErrorDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto,
-        StatusDto,
+        DistanceResultDto, ErrorDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto, StatusDto,
     };
 
     use super::*;
+
+    fn temp_history_path(name: &str) -> PathBuf {
+        let id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("space-game-app-{name}-{id}.history"))
+    }
 
     #[test]
     fn command_submission_increments_sequence() {
@@ -334,6 +370,39 @@ mod tests {
         assert_eq!(app.input_value(), "distance mars");
         assert_eq!(app.status.object_count, 8);
         assert_eq!(app.display_game_time(), "2097-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn loads_history_from_injected_store() {
+        let path = temp_history_path("load");
+        fs::write(&path, "objects\nstatus\n").unwrap();
+
+        let mut app =
+            ClientApp::with_history_store(DEFAULT_SERVER_URL, CommandHistoryStore::path(&path))
+                .unwrap();
+        app.history_previous();
+
+        assert_eq!(app.input_value(), "status");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn saves_submitted_history_to_injected_store() {
+        let path = temp_history_path("save");
+        let mut app =
+            ClientApp::with_history_store(DEFAULT_SERVER_URL, CommandHistoryStore::path(&path))
+                .unwrap();
+        app.set_input("objects");
+
+        assert!(matches!(
+            app.submit_input(),
+            Some(ClientToServer::Command { text, .. }) if text == "objects"
+        ));
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "objects");
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

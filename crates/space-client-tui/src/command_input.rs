@@ -3,6 +3,8 @@ use std::time::Instant;
 use space_game_protocol::{CompletionCandidateDto, CompletionCandidateKindDto};
 use tui_input::{Input, InputRequest};
 
+use crate::history::DEFAULT_MAX_HISTORY;
+
 const LOCAL_COMMANDS: &[&str] = &["exit", "quit"];
 
 #[derive(Debug, Clone)]
@@ -14,6 +16,8 @@ pub struct CommandInputController {
     reverse_search: Option<ReverseSearchState>,
     pending_completion: Option<PendingCompletionState>,
     completion_candidates: Vec<CompletionCandidateDto>,
+    max_history: usize,
+    history_dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +50,8 @@ impl Default for CommandInputController {
             reverse_search: None,
             pending_completion: None,
             completion_candidates: Vec::new(),
+            max_history: DEFAULT_MAX_HISTORY,
+            history_dirty: false,
         }
     }
 }
@@ -182,10 +188,12 @@ impl CommandInputController {
     }
 
     pub fn reverse_search_view(&self) -> Option<ReverseSearchView> {
-        self.reverse_search.as_ref().map(|search| ReverseSearchView {
-            query: search.query.clone(),
-            current_match: search.current_match.clone(),
-        })
+        self.reverse_search
+            .as_ref()
+            .map(|search| ReverseSearchView {
+                query: search.query.clone(),
+                current_match: search.current_match.clone(),
+            })
     }
 
     pub fn complete_local_command(&mut self) -> bool {
@@ -257,6 +265,20 @@ impl CommandInputController {
         &self.history
     }
 
+    pub fn set_history(&mut self, history: Vec<String>) {
+        self.history = history;
+        self.bound_history();
+        self.history_cursor = None;
+        self.history_draft.clear();
+        self.history_dirty = false;
+    }
+
+    pub fn take_history_dirty(&mut self) -> bool {
+        let dirty = self.history_dirty;
+        self.history_dirty = false;
+        dirty
+    }
+
     fn record_history(&mut self, text: &str) {
         if matches!(text, "quit" | "exit") {
             return;
@@ -265,6 +287,15 @@ impl CommandInputController {
             return;
         }
         self.history.push(text.to_string());
+        self.bound_history();
+        self.history_dirty = true;
+    }
+
+    fn bound_history(&mut self) {
+        if self.history.len() > self.max_history {
+            let start = self.history.len() - self.max_history;
+            self.history.drain(0..start);
+        }
     }
 
     fn leave_history_browse_for_edit(&mut self) {
@@ -362,7 +393,11 @@ mod tests {
             input.insert_char(ch);
         }
         assert_eq!(
-            input.reverse_search_view().unwrap().current_match.as_deref(),
+            input
+                .reverse_search_view()
+                .unwrap()
+                .current_match
+                .as_deref(),
             Some("distance mars")
         );
         assert!(input.accept_reverse_search());
@@ -392,5 +427,25 @@ mod tests {
         assert_eq!(input.submit().as_deref(), Some("objects"));
         assert_eq!(input.value(), "");
         assert_eq!(input.history(), &["objects".to_string()]);
+    }
+
+    #[test]
+    fn adjacent_repeated_commands_are_deduplicated() {
+        let mut input = CommandInputController::default();
+        for _ in 0..2 {
+            input.set_value("objects".to_string());
+            assert_eq!(input.submit().as_deref(), Some("objects"));
+        }
+
+        assert_eq!(input.history(), &["objects".to_string()]);
+    }
+
+    #[test]
+    fn loaded_history_is_bounded() {
+        let mut input = CommandInputController::default();
+        input.set_history((0..1_005).map(|index| format!("cmd-{index}")).collect());
+
+        assert_eq!(input.history().len(), 1_000);
+        assert_eq!(input.history().first().unwrap(), "cmd-5");
     }
 }

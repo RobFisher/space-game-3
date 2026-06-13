@@ -25,12 +25,12 @@
 
 ## 4. Persistent History
 
-- [ ] 4.1 Add a command history store with injectable path or storage abstraction for tests.
-- [ ] 4.2 Load saved history when starting the TUI client.
-- [ ] 4.3 Save non-empty submitted commands except `quit` and `exit`.
-- [ ] 4.4 Deduplicate adjacent repeated commands and enforce the configured maximum history length.
-- [ ] 4.5 Ensure non-history tests use in-memory, disabled, temporary, or injected history storage rather than the real user history file.
-- [ ] 4.6 Add history persistence tests that use temporary files or injected storage paths.
+- [x] 4.1 Add a command history store with injectable path or storage abstraction for tests.
+- [x] 4.2 Load saved history when starting the TUI client.
+- [x] 4.3 Save non-empty submitted commands except `quit` and `exit`.
+- [x] 4.4 Deduplicate adjacent repeated commands and enforce the configured maximum history length.
+- [x] 4.5 Ensure non-history tests use in-memory, disabled, temporary, or injected history storage rather than the real user history file.
+- [x] 4.6 Add history persistence tests that use temporary files or injected storage paths.
 
 ## 5. TUI Autocomplete UX
 
