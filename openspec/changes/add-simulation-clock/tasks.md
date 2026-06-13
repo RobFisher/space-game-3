@@ -1,8 +1,8 @@
 ## 1. Protocol Contracts
 
-- [ ] 1.1 Add protocol DTOs for simulation time state, time units, simulation time requests, and simulation time advancement requests.
-- [ ] 1.2 Add optional explicit timestamp fields to distance and distances request DTOs while preserving backward-compatible deserialization.
-- [ ] 1.3 Add protocol serialization round-trip tests for simulation time messages, time advancement, and explicit distance timestamps.
+- [x] 1.1 Add protocol DTOs for simulation time state, time units, simulation time requests, and simulation time advancement requests.
+- [x] 1.2 Add optional explicit timestamp fields to distance and distances request DTOs while preserving backward-compatible deserialization.
+- [x] 1.3 Add protocol serialization round-trip tests for simulation time messages, time advancement, and explicit distance timestamps.
 
 ## 2. Server Clock Model
 

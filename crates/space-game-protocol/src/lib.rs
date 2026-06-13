@@ -19,11 +19,23 @@ pub enum ClientToServer {
     RequestDistance {
         seq: u64,
         object_query: String,
+        #[serde(default)]
+        at_game_time: Option<String>,
     },
     RequestDistances {
         seq: u64,
         limit: Option<usize>,
         sort: DistanceSort,
+        #[serde(default)]
+        at_game_time: Option<String>,
+    },
+    RequestSimulationTime {
+        seq: u64,
+    },
+    AdvanceSimulationTime {
+        seq: u64,
+        amount: i64,
+        unit: TimeUnit,
     },
     RequestStatus {
         seq: u64,
@@ -61,6 +73,10 @@ pub enum ServerToClient {
         seq: u64,
         results: Vec<DistanceResultDto>,
     },
+    SimulationTime {
+        seq: Option<u64>,
+        state: SimulationTimeDto,
+    },
     OutputLine {
         seq: Option<u64>,
         line: String,
@@ -85,6 +101,15 @@ impl Default for DistanceSort {
     fn default() -> Self {
         Self::Name
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeUnit {
+    Seconds,
+    Minutes,
+    Hours,
+    Days,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +137,13 @@ pub struct StatusDto {
     pub observer_label: String,
     pub observer_frame: String,
     pub object_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SimulationTimeDto {
+    pub current_time: String,
+    pub running: bool,
+    pub rate: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +217,72 @@ mod tests {
                 at_game_time: "2097-01-01T00:00:00Z".to_string(),
                 quality: Some("fictional".to_string()),
             },
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn simulation_time_request_round_trips() {
+        let msg = ClientToServer::RequestSimulationTime { seq: 4 };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn simulation_time_response_round_trips() {
+        let msg = ServerToClient::SimulationTime {
+            seq: Some(6),
+            state: SimulationTimeDto {
+                current_time: "2097-01-01T00:00:07Z".to_string(),
+                running: true,
+                rate: 1.0,
+            },
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn simulation_time_advance_round_trips() {
+        let msg = ClientToServer::AdvanceSimulationTime {
+            seq: 5,
+            amount: 2,
+            unit: TimeUnit::Hours,
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn distance_request_round_trips_without_explicit_time() {
+        let msg = ClientToServer::RequestDistance {
+            seq: 10,
+            object_query: "mars".to_string(),
+            at_game_time: None,
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn distance_request_round_trips_with_explicit_time() {
+        let msg = ClientToServer::RequestDistance {
+            seq: 10,
+            object_query: "mars".to_string(),
+            at_game_time: Some("2097-01-02T00:00:00Z".to_string()),
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn distances_request_round_trips_with_explicit_time() {
+        let msg = ClientToServer::RequestDistances {
+            seq: 11,
+            limit: Some(3),
+            sort: DistanceSort::Distance,
+            at_game_time: Some("2097-01-02T00:00:00Z".to_string()),
         };
 
         assert_eq!(round_trip(&msg), msg);
