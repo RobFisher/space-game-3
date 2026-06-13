@@ -239,7 +239,11 @@ mod tests {
             ServerToClient::Status { seq: Some(4), .. }
         ));
 
-        send_protocol(&mut socket, ClientToServer::RequestSimulationTime { seq: 5 }).await;
+        send_protocol(
+            &mut socket,
+            ClientToServer::RequestSimulationTime { seq: 5 },
+        )
+        .await;
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::SimulationTime {

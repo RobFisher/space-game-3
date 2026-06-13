@@ -154,7 +154,11 @@ struct TokenSpan<'a> {
     end: usize,
 }
 
-fn complete_input(service: &SolarSystemQueryService, input: &str, cursor: usize) -> CompletionResult {
+fn complete_input(
+    service: &SolarSystemQueryService,
+    input: &str,
+    cursor: usize,
+) -> CompletionResult {
     let cursor = cursor.min(input.len());
     if !input.is_char_boundary(cursor) {
         return empty_completion(cursor);
@@ -487,7 +491,9 @@ fn parse_distances_args(
 }
 
 fn parse_advance_args(words: &[&str]) -> Result<(i64, TimeUnit), CommandError> {
-    let amount_text = words.first().ok_or(CommandError::MissingTimeAdvanceAmount)?;
+    let amount_text = words
+        .first()
+        .ok_or(CommandError::MissingTimeAdvanceAmount)?;
     let amount = amount_text
         .parse::<i64>()
         .map_err(|_| CommandError::InvalidTimeAdvanceAmount((*amount_text).to_string()))?;
@@ -495,7 +501,10 @@ fn parse_advance_args(words: &[&str]) -> Result<(i64, TimeUnit), CommandError> {
         .get(1)
         .ok_or_else(|| CommandError::UnsupportedTimeUnit("missing value".to_string()))?;
     if words.len() > 2 {
-        return Err(CommandError::UnknownCommand(format!("advance {}", words[2])));
+        return Err(CommandError::UnknownCommand(format!(
+            "advance {}",
+            words[2]
+        )));
     }
     Ok((amount, parse_time_unit(unit_text)?))
 }
@@ -644,8 +653,12 @@ mod tests {
 
     #[test]
     fn handles_limited_and_sorted_distances() {
-        let responses =
-            handle_command_message(&service(), &clock(), 9, "distances --limit 3 --sort distance");
+        let responses = handle_command_message(
+            &service(),
+            &clock(),
+            9,
+            "distances --limit 3 --sort distance",
+        );
 
         match &responses[1] {
             ServerToClient::Distances { seq, results } => {

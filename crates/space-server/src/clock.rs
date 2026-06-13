@@ -36,7 +36,12 @@ impl SimulationClock {
         }
     }
 
-    pub fn advance(&mut self, amount: i64, unit: TimeUnit, now: Instant) -> SimulationClockSnapshot {
+    pub fn advance(
+        &mut self,
+        amount: i64,
+        unit: TimeUnit,
+        now: Instant,
+    ) -> SimulationClockSnapshot {
         let current_time = self.current_time(now);
         self.anchor_sim_time = current_time.add_seconds(unit_seconds(unit) * amount as f64);
         self.anchor_wall_time = now;
@@ -93,7 +98,10 @@ mod tests {
         let anchor = Instant::now();
         let clock = SimulationClock::new(epoch(), anchor);
 
-        assert_eq!(clock.snapshot(anchor).current_time.to_string(), DEFAULT_GAME_TIME);
+        assert_eq!(
+            clock.snapshot(anchor).current_time.to_string(),
+            DEFAULT_GAME_TIME
+        );
     }
 
     #[test]
