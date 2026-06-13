@@ -6,9 +6,9 @@
 
 ## 2. Server Clock Model
 
-- [ ] 2.1 Add a deterministic server simulation clock model initialized from `DEFAULT_GAME_TIME`.
-- [ ] 2.2 Implement current-time calculation from an anchor simulation time, anchor wall-clock instant, running state, and fixed rate.
-- [ ] 2.3 Implement manual advancement by seconds, minutes, hours, and days with unit validation and deterministic tests.
+- [x] 2.1 Add a deterministic server simulation clock model initialized from `DEFAULT_GAME_TIME`.
+- [x] 2.2 Implement current-time calculation from an anchor simulation time, anchor wall-clock instant, running state, and fixed rate.
+- [x] 2.3 Implement manual advancement by seconds, minutes, hours, and days with unit validation and deterministic tests.
 
 ## 3. Server Command and WebSocket Handling
 

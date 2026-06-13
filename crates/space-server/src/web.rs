@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::{
+    sync::{Arc, RwLock},
+    time::Instant,
+};
 
 use axum::{
     extract::{
@@ -15,7 +18,8 @@ use tokio::net::TcpListener;
 use uuid::Uuid;
 
 use crate::{
-    command::handle_client_message,
+    clock::SimulationClock,
+    command::{handle_client_message, SharedSimulationClock},
     config::{ServerConfig, DEFAULT_GAME_TIME},
     query::SolarSystemQueryService,
 };
@@ -23,12 +27,17 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     service: Arc<SolarSystemQueryService>,
+    clock: SharedSimulationClock,
 }
 
 pub fn app(config: ServerConfig) -> Result<Router, space_game_ephemeris::EphemerisError> {
     let ws_path = config.ws_path.clone();
     let state = AppState {
         service: Arc::new(config.query_service()?),
+        clock: Arc::new(RwLock::new(SimulationClock::new(
+            space_game_ephemeris::GameTime::from_utc_iso8601(DEFAULT_GAME_TIME)?,
+            Instant::now(),
+        ))),
     };
 
     Ok(Router::new()
@@ -59,13 +68,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         return;
     }
 
-    let at = match space_game_ephemeris::GameTime::from_utc_iso8601(DEFAULT_GAME_TIME) {
-        Ok(at) => at,
-        Err(err) => {
-            tracing::error!("invalid default game time: {err}");
-            return;
-        }
-    };
+    let at = state
+        .clock
+        .read()
+        .expect("simulation clock lock poisoned")
+        .snapshot(Instant::now())
+        .current_time;
     let (_, status) = state.service.status(None, &at);
     if send_protocol(&mut sender, &ServerToClient::Status { seq: None, status })
         .await
@@ -107,7 +115,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             }
         };
 
-        for response in handle_client_message(&state.service, incoming) {
+        for response in handle_client_message(&state.service, &state.clock, incoming) {
             if send_protocol(&mut sender, &response).await.is_err() {
                 return;
             }
@@ -201,6 +209,7 @@ mod tests {
             ClientToServer::RequestDistance {
                 seq: 2,
                 object_query: "mars".to_string(),
+                at_game_time: None,
             },
         )
         .await;
@@ -215,6 +224,7 @@ mod tests {
                 seq: 3,
                 limit: Some(2),
                 sort: space_game_protocol::DistanceSort::Distance,
+                at_game_time: None,
             },
         )
         .await;
