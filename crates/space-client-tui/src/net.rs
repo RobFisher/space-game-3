@@ -7,13 +7,18 @@ use space_game_protocol::{ClientToServer, ServerToClient};
 use tokio::time;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use crate::{app::ClientApp, terminal::TerminalGuard, ui};
+use crate::{
+    app::{ClientApp, SILENT_TIME_SYNC_SEQ},
+    terminal::TerminalGuard,
+    ui,
+};
 
 pub async fn run_client(mut app: ClientApp, terminal: &mut TerminalGuard) -> Result<()> {
     let (socket, _) = connect_async(app.server_url.as_str()).await?;
     let (mut writer, mut reader) = socket.split();
     let mut events = EventStream::new();
     let mut render_tick = time::interval(Duration::from_millis(100));
+    let mut time_sync_tick = time::interval(Duration::from_secs(5));
 
     writer
         .send(Message::Text(serde_json::to_string(
@@ -28,6 +33,15 @@ pub async fn run_client(mut app: ClientApp, terminal: &mut TerminalGuard) -> Res
         tokio::select! {
             _ = render_tick.tick() => {
                 terminal.terminal_mut().draw(|frame| ui::draw(frame, &app))?;
+            }
+            _ = time_sync_tick.tick() => {
+                writer
+                    .send(Message::Text(serde_json::to_string(
+                        &ClientToServer::RequestSimulationTime {
+                            seq: SILENT_TIME_SYNC_SEQ,
+                        },
+                    )?))
+                    .await?;
             }
             maybe_event = events.next() => {
                 match maybe_event {

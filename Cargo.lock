@@ -1381,6 +1381,7 @@ dependencies = [
 name = "space-client-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "color-eyre",
  "crossterm",
  "futures",

@@ -21,12 +21,12 @@
 
 ## 4. TUI Client Experience
 
-- [ ] 4.1 Extend client view state to store the latest server simulation time sample, running state, rate, and local receipt instant.
-- [ ] 4.2 Render a projected advancing simulation clock in the status pane during normal TUI redraws.
-- [ ] 4.3 Periodically request simulation time from the server to resync the displayed clock.
-- [ ] 4.4 Display simulation time responses in the output log for `time` and `advance` command responses.
-- [ ] 4.5 Update plain text mode formatting and command completion handling for simulation time responses.
-- [ ] 4.6 Add TUI and plain-mode tests for clock sample updates, projected display time, and simulation time response output.
+- [x] 4.1 Extend client view state to store the latest server simulation time sample, running state, rate, and local receipt instant.
+- [x] 4.2 Render a projected advancing simulation clock in the status pane during normal TUI redraws.
+- [x] 4.3 Periodically request simulation time from the server to resync the displayed clock.
+- [x] 4.4 Display simulation time responses in the output log for `time` and `advance` command responses.
+- [x] 4.5 Update plain text mode formatting and command completion handling for simulation time responses.
+- [x] 4.6 Add TUI and plain-mode tests for clock sample updates, projected display time, and simulation time response output.
 
 ## 5. Documentation and Validation
 

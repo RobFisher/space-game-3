@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
     let status = vec![
         format!("Connected: {}", if app.connected { "yes" } else { "no" }),
         format!("Server: {}", app.status.server),
-        format!("Game time: {}", app.status.game_time),
+        format!("Game time: {}", app.display_game_time()),
         format!("Observer: {}", app.status.observer_label),
         format!("Frame: {}", app.status.observer_frame),
         format!("Objects: {}", app.status.object_count),

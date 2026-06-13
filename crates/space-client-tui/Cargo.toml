@@ -12,6 +12,7 @@ name = "space-client-tui"
 path = "src/main.rs"
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 color-eyre = "0.6"
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures = "0.3"

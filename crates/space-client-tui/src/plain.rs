@@ -1,7 +1,8 @@
 use color_eyre::eyre::{eyre, Result};
 use futures::{stream::Stream, Sink, SinkExt, StreamExt};
 use space_game_protocol::{
-    ClientToServer, DistanceResultDto, ObjectSummaryDto, ServerToClient, StatusDto,
+    ClientToServer, DistanceResultDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto,
+    StatusDto,
 };
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::{connect_async, tungstenite, tungstenite::Message};
@@ -71,6 +72,10 @@ pub fn plain_output_lines(message: &ServerToClient, expected_seq: u64) -> Vec<St
             seq: Some(seq),
             status,
         } if *seq == expected_seq => vec![format_status(status)],
+        ServerToClient::SimulationTime {
+            seq: Some(seq),
+            state,
+        } if *seq == expected_seq => vec![format_simulation_time(state)],
         ServerToClient::OutputLine {
             seq: Some(seq),
             line,
@@ -165,6 +170,7 @@ fn is_command_completion(message: &ServerToClient, expected_seq: u64) -> bool {
         | ServerToClient::Distances { seq, .. }
         | ServerToClient::Pong { seq } => *seq == expected_seq,
         ServerToClient::Status { seq: Some(seq), .. }
+        | ServerToClient::SimulationTime { seq: Some(seq), .. }
         | ServerToClient::OutputLine { seq: Some(seq), .. }
         | ServerToClient::Error { seq: Some(seq), .. } => *seq == expected_seq,
         _ => false,
@@ -195,6 +201,13 @@ fn format_status(status: &StatusDto) -> String {
         status.observer_label,
         status.observer_frame,
         status.object_count
+    )
+}
+
+fn format_simulation_time(state: &SimulationTimeDto) -> String {
+    format!(
+        "Simulation time: {} running={} rate={}",
+        state.current_time, state.running, state.rate
     )
 }
 
@@ -261,6 +274,26 @@ mod tests {
         assert_eq!(
             lines,
             vec!["Status: connected=true server=127.0.0.1:4000 game_time=2097-01-01T00:00:00Z observer=demo-observer frame=solar_system_barycentric_j2000 objects=8"]
+        );
+    }
+
+    #[test]
+    fn formats_simulation_time_response_for_expected_sequence() {
+        let lines = plain_output_lines(
+            &ServerToClient::SimulationTime {
+                seq: Some(6),
+                state: SimulationTimeDto {
+                    current_time: "2097-01-01T00:00:00Z".to_string(),
+                    running: true,
+                    rate: 1.0,
+                },
+            },
+            6,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Simulation time: 2097-01-01T00:00:00Z running=true rate=1"]
         );
     }
 
