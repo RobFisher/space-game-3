@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the local authoritative server that owns ephemeris access for the first networked TUI slice, serves WebSocket protocol messages, and answers object, distance, and status queries from fictional demo data.
+Define the local authoritative server that owns ephemeris access and simulation time state for the first networked TUI slice, serves WebSocket protocol messages, and answers object, distance, and status queries from fictional demo data.
 
 ## Requirements
 
@@ -17,17 +17,22 @@ The server SHALL expose a local WebSocket endpoint that accepts protocol message
 
 ### Requirement: Authoritative ephemeris boundary
 
-The server SHALL own all runtime ephemeris queries for the networked TUI slice, and clients SHALL NOT need direct access to the ephemeris crate to list objects or calculate distances.
+The server SHALL own all runtime ephemeris queries and simulation time state for the networked TUI slice, and clients SHALL NOT need direct access to the ephemeris crate to list objects, calculate distances, or determine the authoritative simulation timestamp.
 
 #### Scenario: Client requests object list
 
 - **WHEN** a connected client requests known objects
 - **THEN** the server queries its `SolarSystem` instance and returns object summary DTOs
 
-#### Scenario: Client requests object distance
+#### Scenario: Client requests object distance without explicit time
 
-- **WHEN** a connected client requests the distance to a known object
-- **THEN** the server resolves the object's position at the current game time and returns its distance from the server-owned observer
+- **WHEN** a connected client requests the distance to a known object without an explicit timestamp
+- **THEN** the server resolves the object's position at the current authoritative simulation time and returns its distance from the server-owned observer
+
+#### Scenario: Client requests object distance at explicit time
+
+- **WHEN** a connected client requests the distance to a known object with an explicit timestamp
+- **THEN** the server resolves the object's position at the supplied timestamp without changing the authoritative simulation clock
 
 ### Requirement: Fictional demo registry
 
@@ -50,7 +55,7 @@ The server SHALL measure first-slice distances from a fixed Cartesian observer l
 #### Scenario: Report observer status
 
 - **WHEN** the client requests status
-- **THEN** the server response includes the observer label and observer frame
+- **THEN** the server response includes the current authoritative simulation time, observer label, and observer frame
 
 #### Scenario: Calculate distance from fixed observer
 
@@ -59,7 +64,7 @@ The server SHALL measure first-slice distances from a fixed Cartesian observer l
 
 ### Requirement: Server command handling
 
-The server SHALL parse and handle the first-slice commands `help`, `objects`, `distance <object>`, `distances`, `distances --limit <n>`, `distances --sort distance`, and `status`.
+The server SHALL parse and handle the first-slice commands `help`, `objects`, `distance <object>`, `distance <object> --at <timestamp>`, `distances`, `distances --limit <n>`, `distances --sort distance`, `distances --at <timestamp>`, `status`, `time`, and `advance <amount> <seconds|minutes|hours|days>`.
 
 #### Scenario: Handle objects command
 
@@ -70,6 +75,11 @@ The server SHALL parse and handle the first-slice commands `help`, `objects`, `d
 
 - **WHEN** a connected client sends the command `distance mars`
 - **THEN** the server responds with the distance result for the object resolved from `mars`
+
+#### Scenario: Handle distance command at explicit time
+
+- **WHEN** a connected client sends the command `distance mars --at 2097-01-02T00:00:00Z`
+- **THEN** the server responds with a distance result whose game time is `2097-01-02T00:00:00Z`
 
 #### Scenario: Handle limited distances command
 
@@ -84,6 +94,25 @@ The server SHALL parse and handle the first-slice commands `help`, `objects`, `d
 #### Scenario: Handle unknown command
 
 - **WHEN** a connected client sends a command the server does not support
+- **THEN** the server responds with a protocol error message that includes the command sequence number
+
+### Requirement: Simulation time command handling
+
+The server SHALL parse and handle `time` and `advance <amount> <seconds|minutes|hours|days>` commands.
+
+#### Scenario: Handle time command
+
+- **WHEN** a connected client sends the command `time`
+- **THEN** the server responds with the current authoritative simulation timestamp
+
+#### Scenario: Handle advance command
+
+- **WHEN** a connected client sends the command `advance 1 day`
+- **THEN** the server advances the authoritative simulation clock by one day and responds with the updated simulation timestamp
+
+#### Scenario: Reject invalid advance command
+
+- **WHEN** a connected client sends an advance command with a missing amount, invalid amount, or unsupported unit
 - **THEN** the server responds with a protocol error message that includes the command sequence number
 
 ### Requirement: Object query resolution
