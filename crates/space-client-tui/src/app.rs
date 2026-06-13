@@ -2,6 +2,7 @@ use space_game_protocol::{
     ClientToServer, DistanceResultDto, ObjectSummaryDto, ServerToClient, StatusDto,
 };
 
+pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:4000/ws";
 const MAX_OUTPUT_LINES: usize = 500;
 
 #[derive(Debug, Clone)]
@@ -28,7 +29,13 @@ pub struct ClientStatusView {
 
 impl Default for ClientApp {
     fn default() -> Self {
-        let server_url = "ws://127.0.0.1:4000/ws".to_string();
+        Self::with_server_url(DEFAULT_SERVER_URL)
+    }
+}
+
+impl ClientApp {
+    pub fn with_server_url(server_url: impl Into<String>) -> Self {
+        let server_url = server_url.into();
         Self {
             connected: false,
             status: ClientStatusView {
@@ -47,9 +54,7 @@ impl Default for ClientApp {
             should_quit: false,
         }
     }
-}
 
-impl ClientApp {
     pub fn insert_char(&mut self, c: char) {
         self.input.insert(self.cursor, c);
         self.cursor += c.len_utf8();
