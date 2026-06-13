@@ -6,13 +6,13 @@
 
 ## 2. Server Completion Logic
 
-- [ ] 2.1 Add server command metadata for server-supported command names and supported option names.
-- [ ] 2.2 Implement completion request handling in the WebSocket command/message path.
-- [ ] 2.3 Implement command-name completion for first-token input.
-- [ ] 2.4 Implement object-name completion for `distance <object>` argument positions using authoritative object data.
-- [ ] 2.5 Implement option completion for supported option positions such as `distances --s`.
-- [ ] 2.6 Return empty completion responses for unsupported completion contexts without treating them as command errors.
-- [ ] 2.7 Add server unit tests for command-name, object-name, multi-word display-name, option-name, unsupported-context, and sequence-preservation completion behavior.
+- [x] 2.1 Add server command metadata for server-supported command names and supported option names.
+- [x] 2.2 Implement completion request handling in the WebSocket command/message path.
+- [x] 2.3 Implement command-name completion for first-token input.
+- [x] 2.4 Implement object-name completion for `distance <object>` argument positions using authoritative object data.
+- [x] 2.5 Implement option completion for supported option positions such as `distances --s`.
+- [x] 2.6 Return empty completion responses for unsupported completion contexts without treating them as command errors.
+- [x] 2.7 Add server unit tests for command-name, object-name, multi-word display-name, option-name, unsupported-context, and sequence-preservation completion behavior.
 
 ## 3. TUI Input Controller
 

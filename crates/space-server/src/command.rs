@@ -5,12 +5,25 @@ use std::{
 
 use space_game_ephemeris::GameTime;
 use space_game_protocol::{
-    ClientToServer, DistanceSort, ErrorDto, ServerToClient, TimeUnit,
+    ClientToServer, CompletionCandidateDto, CompletionCandidateKindDto, CompletionRequestDto,
+    CompletionResponseDto, DistanceSort, ErrorDto, ReplacementSpanDto, ServerToClient, TimeUnit,
 };
 
 use crate::{clock::SimulationClock, query::SolarSystemQueryService};
 
 pub type SharedSimulationClock = Arc<RwLock<SimulationClock>>;
+
+const SERVER_COMMANDS: &[&str] = &[
+    "advance",
+    "distance",
+    "distances",
+    "help",
+    "objects",
+    "status",
+    "time",
+];
+const DISTANCE_OPTIONS: &[&str] = &["--at"];
+const DISTANCES_OPTIONS: &[&str] = &["--at", "--limit", "--sort"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
@@ -76,6 +89,9 @@ pub fn handle_client_message(
     match message {
         ClientToServer::Hello { .. } => vec![status_message(service, clock, None)],
         ClientToServer::Command { seq, text } => handle_command_message(service, clock, seq, &text),
+        ClientToServer::CompletionRequest(request) => {
+            vec![handle_completion_request(service, request)]
+        }
         ClientToServer::RequestObjects { seq } => {
             vec![ServerToClient::Objects {
                 seq,
@@ -112,6 +128,221 @@ pub fn handle_client_message(
         ClientToServer::RequestStatus { seq } => vec![status_message(service, clock, Some(seq))],
         ClientToServer::Ping { seq } => vec![ServerToClient::Pong { seq }],
     }
+}
+
+pub fn handle_completion_request(
+    service: &SolarSystemQueryService,
+    request: CompletionRequestDto,
+) -> ServerToClient {
+    let completion = complete_input(service, &request.input, request.cursor);
+    ServerToClient::CompletionResponse(CompletionResponseDto {
+        seq: request.seq,
+        replacement: completion.replacement,
+        candidates: completion.candidates,
+    })
+}
+
+struct CompletionResult {
+    replacement: ReplacementSpanDto,
+    candidates: Vec<CompletionCandidateDto>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TokenSpan<'a> {
+    text: &'a str,
+    start: usize,
+    end: usize,
+}
+
+fn complete_input(service: &SolarSystemQueryService, input: &str, cursor: usize) -> CompletionResult {
+    let cursor = cursor.min(input.len());
+    if !input.is_char_boundary(cursor) {
+        return empty_completion(cursor);
+    }
+
+    let tokens = token_spans(input);
+    let (current_index, replacement) = current_token(&tokens, cursor);
+    let prefix = token_text(input, &replacement);
+
+    if current_index == 0 {
+        return CompletionResult {
+            replacement,
+            candidates: complete_words(
+                SERVER_COMMANDS,
+                prefix,
+                CompletionCandidateKindDto::Command,
+            ),
+        };
+    }
+
+    let Some(command) = tokens.first().map(|token| token.text.to_ascii_lowercase()) else {
+        return empty_completion(cursor);
+    };
+    match command.as_str() {
+        "distance" => {
+            if prefix.starts_with("--") {
+                return CompletionResult {
+                    replacement,
+                    candidates: complete_words(
+                        DISTANCE_OPTIONS,
+                        prefix,
+                        CompletionCandidateKindDto::Option,
+                    ),
+                };
+            }
+            if tokens
+                .iter()
+                .take(current_index)
+                .any(|token| token.text == "--at")
+            {
+                return CompletionResult {
+                    replacement,
+                    candidates: Vec::new(),
+                };
+            }
+            CompletionResult {
+                replacement,
+                candidates: object_candidates(service, prefix),
+            }
+        }
+        "distances" => {
+            if prefix.starts_with("--") {
+                CompletionResult {
+                    replacement,
+                    candidates: complete_words(
+                        DISTANCES_OPTIONS,
+                        prefix,
+                        CompletionCandidateKindDto::Option,
+                    ),
+                }
+            } else {
+                CompletionResult {
+                    replacement,
+                    candidates: Vec::new(),
+                }
+            }
+        }
+        _ => CompletionResult {
+            replacement,
+            candidates: Vec::new(),
+        },
+    }
+}
+
+fn empty_completion(cursor: usize) -> CompletionResult {
+    CompletionResult {
+        replacement: ReplacementSpanDto {
+            start: cursor,
+            end: cursor,
+        },
+        candidates: Vec::new(),
+    }
+}
+
+fn token_spans(input: &str) -> Vec<TokenSpan<'_>> {
+    let mut tokens = Vec::new();
+    let mut token_start = None;
+
+    for (index, ch) in input.char_indices() {
+        if ch.is_whitespace() {
+            if let Some(start) = token_start.take() {
+                tokens.push(TokenSpan {
+                    text: &input[start..index],
+                    start,
+                    end: index,
+                });
+            }
+        } else if token_start.is_none() {
+            token_start = Some(index);
+        }
+    }
+
+    if let Some(start) = token_start {
+        tokens.push(TokenSpan {
+            text: &input[start..],
+            start,
+            end: input.len(),
+        });
+    }
+
+    tokens
+}
+
+fn current_token(tokens: &[TokenSpan<'_>], cursor: usize) -> (usize, ReplacementSpanDto) {
+    for (index, token) in tokens.iter().enumerate() {
+        if (token.start..=token.end).contains(&cursor) {
+            return (
+                index,
+                ReplacementSpanDto {
+                    start: token.start,
+                    end: token.end,
+                },
+            );
+        }
+        if cursor < token.start {
+            return (
+                index,
+                ReplacementSpanDto {
+                    start: cursor,
+                    end: cursor,
+                },
+            );
+        }
+    }
+
+    (
+        tokens.len(),
+        ReplacementSpanDto {
+            start: cursor,
+            end: cursor,
+        },
+    )
+}
+
+fn token_text<'a>(input: &'a str, replacement: &ReplacementSpanDto) -> &'a str {
+    input
+        .get(replacement.start..replacement.end)
+        .expect("replacement span comes from input token boundaries")
+}
+
+fn complete_words(
+    words: &[&str],
+    prefix: &str,
+    kind: CompletionCandidateKindDto,
+) -> Vec<CompletionCandidateDto> {
+    words
+        .iter()
+        .copied()
+        .filter(|word| word.starts_with(prefix))
+        .map(|word| CompletionCandidateDto {
+            insertion: word.to_string(),
+            display: word.to_string(),
+            kind,
+        })
+        .collect()
+}
+
+fn object_candidates(
+    service: &SolarSystemQueryService,
+    prefix: &str,
+) -> Vec<CompletionCandidateDto> {
+    let normalized = prefix.to_ascii_lowercase();
+    service
+        .list_objects()
+        .into_iter()
+        .filter(|object| {
+            object.id.to_ascii_lowercase().starts_with(&normalized)
+                || object
+                    .display_name
+                    .to_ascii_lowercase()
+                    .starts_with(&normalized)
+        })
+        .map(|object| CompletionCandidateDto {
+            insertion: object.display_name.clone(),
+            display: object.display_name,
+            kind: CompletionCandidateKindDto::Object,
+        })
+        .collect()
 }
 
 pub fn handle_command_message(
@@ -347,7 +578,7 @@ fn response_or_error(
 mod tests {
     use std::time::Instant;
 
-    use space_game_protocol::DistanceSort;
+    use space_game_protocol::{CompletionCandidateKindDto, CompletionRequestDto, DistanceSort};
 
     use super::*;
     use crate::{
@@ -522,6 +753,137 @@ mod tests {
                 state
             } if state.current_time == DEFAULT_GAME_TIME
         ));
+    }
+
+    #[test]
+    fn completes_command_names_with_sequence() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 22,
+                input: "di".to_string(),
+                cursor: 2,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.seq, 22);
+                assert_eq!(response.replacement.start, 0);
+                assert_eq!(response.replacement.end, 2);
+                assert!(response.candidates.iter().any(|candidate| {
+                    candidate.insertion == "distance"
+                        && candidate.kind == CompletionCandidateKindDto::Command
+                }));
+                assert!(response
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.insertion == "distances"));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_distance_object_argument() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 23,
+                input: "distance ma".to_string(),
+                cursor: 11,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 9);
+                assert_eq!(response.replacement.end, 11);
+                assert!(response.candidates.iter().any(|candidate| {
+                    candidate.insertion == "Mars"
+                        && candidate.display == "Mars"
+                        && candidate.kind == CompletionCandidateKindDto::Object
+                }));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_multi_word_object_display_name() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 24,
+                input: "distance demo".to_string(),
+                cursor: 13,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 9);
+                assert_eq!(response.replacement.end, 13);
+                assert!(response.candidates.iter().any(|candidate| {
+                    candidate.insertion == "Demo Station"
+                        && candidate.display == "Demo Station"
+                        && candidate.kind == CompletionCandidateKindDto::Object
+                }));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_distances_option_name() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 25,
+                input: "distances --s".to_string(),
+                cursor: 13,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 10);
+                assert_eq!(response.replacement.end, 13);
+                assert_eq!(
+                    response
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.insertion.as_str())
+                        .collect::<Vec<_>>(),
+                    vec!["--sort"]
+                );
+                assert_eq!(
+                    response.candidates[0].kind,
+                    CompletionCandidateKindDto::Option
+                );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn returns_empty_completion_for_unsupported_context() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 26,
+                input: "advance 1".to_string(),
+                cursor: 9,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.seq, 26);
+                assert!(response.candidates.is_empty());
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
     }
 
     #[test]
