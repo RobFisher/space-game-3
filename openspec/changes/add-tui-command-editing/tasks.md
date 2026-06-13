@@ -16,12 +16,12 @@
 
 ## 3. TUI Input Controller
 
-- [ ] 3.1 Evaluate and add a compatible `tui-input` dependency, upgrading Ratatui/Crossterm only if needed and verified.
-- [ ] 3.2 Introduce a command input controller that owns editable text, cursor position, history browsing state, reverse-search state, pending completion state, and completion candidate state.
-- [ ] 3.3 Replace direct `String`/cursor mutation in `ClientApp` with the command input controller while preserving command submission behavior.
-- [ ] 3.4 Update terminal key handling so Up/Down, Ctrl-R, Tab, Esc, Enter, text input, Backspace, and cursor movement route through the controller.
-- [ ] 3.5 Add local-only completion candidates for TUI commands such as `quit` and `exit`.
-- [ ] 3.6 Add view-model tests for editable recalled commands, draft restoration, Ctrl-R search accept/cancel, local-only command completion, and normal command submission.
+- [x] 3.1 Evaluate and add a compatible `tui-input` dependency, upgrading Ratatui/Crossterm only if needed and verified.
+- [x] 3.2 Introduce a command input controller that owns editable text, cursor position, history browsing state, reverse-search state, pending completion state, and completion candidate state.
+- [x] 3.3 Replace direct `String`/cursor mutation in `ClientApp` with the command input controller while preserving command submission behavior.
+- [x] 3.4 Update terminal key handling so Up/Down, Ctrl-R, Tab, Esc, Enter, text input, Backspace, and cursor movement route through the controller.
+- [x] 3.5 Add local-only completion candidates for TUI commands such as `quit` and `exit`.
+- [x] 3.6 Add view-model tests for editable recalled commands, draft restoration, Ctrl-R search accept/cancel, local-only command completion, and normal command submission.
 
 ## 4. Persistent History
 

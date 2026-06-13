@@ -92,6 +92,10 @@ pub fn handle_terminal_event(app: &mut ClientApp, event: Event) -> Option<Client
             app.should_quit = true;
             None
         }
+        KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.start_or_repeat_reverse_search();
+            None
+        }
         KeyCode::Char(ch) => {
             app.insert_char(ch);
             None
@@ -108,9 +112,23 @@ pub fn handle_terminal_event(app: &mut ClientApp, event: Event) -> Option<Client
             app.move_right();
             None
         }
+        KeyCode::Up => {
+            app.history_previous();
+            None
+        }
+        KeyCode::Down => {
+            app.history_next();
+            None
+        }
+        KeyCode::Tab => {
+            app.complete_local_command();
+            None
+        }
         KeyCode::Enter => app.submit_input(),
         KeyCode::Esc => {
-            app.should_quit = true;
+            if !app.cancel_input_mode() {
+                app.should_quit = true;
+            }
             None
         }
         _ => None,

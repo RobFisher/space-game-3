@@ -51,19 +51,35 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
         main[1],
     );
 
+    let input_area_width = vertical[1].width.saturating_sub(2) as usize;
+    let scroll = app.input_visual_scroll(input_area_width);
+    let (title, input_text) = if let Some(search) = app.reverse_search_view() {
+        (
+            format!("Reverse search: {}", search.query),
+            search.current_match.unwrap_or_default(),
+        )
+    } else {
+        ("Command".to_string(), app.input_value().to_string())
+    };
+
     frame.render_widget(
-        Paragraph::new(app.input.as_str())
+        Paragraph::new(input_text)
             .style(
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             )
-            .block(Block::default().title("Command").borders(Borders::ALL)),
+            .scroll((0, scroll as u16))
+            .block(Block::default().title(title).borders(Borders::ALL)),
         vertical[1],
     );
 
-    let cursor_x =
-        vertical[1].x + 1 + app.cursor.min(vertical[1].width.saturating_sub(2) as usize) as u16;
+    let cursor_x = vertical[1].x
+        + 1
+        + app
+            .input_visual_cursor()
+            .saturating_sub(scroll)
+            .min(input_area_width) as u16;
     let cursor_y = vertical[1].y + 1;
     frame.set_cursor_position((cursor_x, cursor_y));
 }

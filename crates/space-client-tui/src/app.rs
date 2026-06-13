@@ -6,6 +6,8 @@ use space_game_protocol::{
     StatusDto,
 };
 
+use crate::command_input::{CommandInputController, ReverseSearchView};
+
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:4000/ws";
 pub const SILENT_TIME_SYNC_SEQ: u64 = 0;
 const MAX_OUTPUT_LINES: usize = 500;
@@ -16,8 +18,7 @@ pub struct ClientApp {
     pub server_url: String,
     pub output_lines: Vec<String>,
     pub status: ClientStatusView,
-    pub input: String,
-    pub cursor: usize,
+    pub command_input: CommandInputController,
     pub next_seq: u64,
     pub should_quit: bool,
     clock_sample: Option<ClientClockSample>,
@@ -62,55 +63,79 @@ impl ClientApp {
             },
             server_url,
             output_lines: vec!["Connecting to ws://127.0.0.1:4000/ws".to_string()],
-            input: String::new(),
-            cursor: 0,
+            command_input: CommandInputController::default(),
             next_seq: 1,
             should_quit: false,
             clock_sample: None,
         }
     }
 
+    pub fn input_value(&self) -> &str {
+        self.command_input.value()
+    }
+
+    pub fn input_cursor_byte(&self) -> usize {
+        self.command_input.cursor_byte()
+    }
+
+    pub fn input_visual_cursor(&self) -> usize {
+        self.command_input.visual_cursor()
+    }
+
+    pub fn input_visual_scroll(&self, width: usize) -> usize {
+        self.command_input.visual_scroll(width)
+    }
+
+    pub fn set_input(&mut self, value: impl Into<String>) {
+        self.command_input.set_value(value.into());
+    }
+
+    pub fn reverse_search_view(&self) -> Option<ReverseSearchView> {
+        self.command_input.reverse_search_view()
+    }
+
     pub fn insert_char(&mut self, c: char) {
-        self.input.insert(self.cursor, c);
-        self.cursor += c.len_utf8();
+        self.command_input.insert_char(c);
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-        if let Some((previous, _)) = self.input[..self.cursor].char_indices().last() {
-            self.input.drain(previous..self.cursor);
-            self.cursor = previous;
-        }
+        self.command_input.backspace();
     }
 
     pub fn move_left(&mut self) {
-        if self.cursor == 0 {
-            return;
-        }
-        if let Some((previous, _)) = self.input[..self.cursor].char_indices().last() {
-            self.cursor = previous;
-        }
+        self.command_input.move_left();
     }
 
     pub fn move_right(&mut self) {
-        if self.cursor >= self.input.len() {
-            return;
-        }
-        if let Some((offset, ch)) = self.input[self.cursor..].char_indices().next() {
-            self.cursor += offset + ch.len_utf8();
+        self.command_input.move_right();
+    }
+
+    pub fn history_previous(&mut self) {
+        self.command_input.history_previous();
+    }
+
+    pub fn history_next(&mut self) {
+        self.command_input.history_next();
+    }
+
+    pub fn start_or_repeat_reverse_search(&mut self) {
+        if self.command_input.reverse_search_view().is_some() {
+            self.command_input.repeat_reverse_search();
+        } else {
+            self.command_input.start_reverse_search();
         }
     }
 
-    pub fn submit_input(&mut self) -> Option<ClientToServer> {
-        let text = self.input.trim().to_string();
-        self.input.clear();
-        self.cursor = 0;
+    pub fn cancel_input_mode(&mut self) -> bool {
+        self.command_input.cancel_reverse_search()
+    }
 
-        if text.is_empty() {
-            return None;
-        }
+    pub fn complete_local_command(&mut self) -> bool {
+        self.command_input.complete_local_command()
+    }
+
+    pub fn submit_input(&mut self) -> Option<ClientToServer> {
+        let text = self.command_input.submit()?;
 
         self.push_output(format!("> {text}"));
 
@@ -145,6 +170,7 @@ impl ClientApp {
                 }
             }
             ServerToClient::CommandAck { .. } => {}
+            ServerToClient::CompletionResponse(_) => {}
             ServerToClient::Status { status, .. } => self.apply_status(status),
             ServerToClient::Objects { objects, .. } => self.display_objects(objects),
             ServerToClient::Distance { result, .. } => self.display_distance(result),
@@ -266,8 +292,7 @@ mod tests {
     #[test]
     fn command_submission_increments_sequence() {
         let mut app = ClientApp::default();
-        app.input = "objects".to_string();
-        app.cursor = app.input.len();
+        app.set_input("objects");
 
         assert_eq!(
             app.submit_input(),
@@ -283,8 +308,7 @@ mod tests {
     #[test]
     fn quit_sets_quit_without_sending_command() {
         let mut app = ClientApp::default();
-        app.input = "quit".to_string();
-        app.cursor = app.input.len();
+        app.set_input("quit");
 
         assert_eq!(app.submit_input(), None);
         assert!(app.should_quit);
@@ -293,8 +317,7 @@ mod tests {
     #[test]
     fn status_update_preserves_input() {
         let mut app = ClientApp::default();
-        app.input = "distance mars".to_string();
-        app.cursor = app.input.len();
+        app.set_input("distance mars");
 
         app.apply_server_message(ServerToClient::Status {
             seq: None,
@@ -308,7 +331,7 @@ mod tests {
             },
         });
 
-        assert_eq!(app.input, "distance mars");
+        assert_eq!(app.input_value(), "distance mars");
         assert_eq!(app.status.object_count, 8);
         assert_eq!(app.display_game_time(), "2097-01-01T00:00:00Z");
     }

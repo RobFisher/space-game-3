@@ -22,4 +22,5 @@ space-game-protocol = { path = "../space-game-protocol" }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.24"
 tracing = "0.1"
+tui-input = "0.14.0"
 url = "2"
