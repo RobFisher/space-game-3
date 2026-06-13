@@ -12,12 +12,12 @@
 
 ## 3. Server Command and WebSocket Handling
 
-- [ ] 3.1 Store the simulation clock in server application state alongside the existing query service.
-- [ ] 3.2 Update status and welcome-time behavior to use the current simulation clock rather than reparsing the fixed default timestamp.
-- [ ] 3.3 Handle typed simulation time query and advancement protocol messages.
-- [ ] 3.4 Add `time` and `advance <amount> <seconds|minutes|hours|days>` command handling with success and error responses.
-- [ ] 3.5 Update distance and distances handling so omitted timestamps use the current simulation clock and explicit timestamps do not mutate it.
-- [ ] 3.6 Add server unit and WebSocket tests covering current time, manual advancement, explicit distance timestamps, and default clock-based distance timestamps.
+- [x] 3.1 Store the simulation clock in server application state alongside the existing query service.
+- [x] 3.2 Update status and welcome-time behavior to use the current simulation clock rather than reparsing the fixed default timestamp.
+- [x] 3.3 Handle typed simulation time query and advancement protocol messages.
+- [x] 3.4 Add `time` and `advance <amount> <seconds|minutes|hours|days>` command handling with success and error responses.
+- [x] 3.5 Update distance and distances handling so omitted timestamps use the current simulation clock and explicit timestamps do not mutate it.
+- [x] 3.6 Add server unit and WebSocket tests covering current time, manual advancement, explicit distance timestamps, and default clock-based distance timestamps.
 
 ## 4. TUI Client Experience
 

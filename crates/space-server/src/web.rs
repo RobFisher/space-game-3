@@ -238,5 +238,31 @@ mod tests {
             recv_protocol(&mut socket).await,
             ServerToClient::Status { seq: Some(4), .. }
         ));
+
+        send_protocol(&mut socket, ClientToServer::RequestSimulationTime { seq: 5 }).await;
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::SimulationTime {
+                seq: Some(5),
+                state
+            } if state.running && state.rate == 1.0
+        ));
+
+        send_protocol(
+            &mut socket,
+            ClientToServer::AdvanceSimulationTime {
+                seq: 6,
+                amount: 1,
+                unit: space_game_protocol::TimeUnit::Days,
+            },
+        )
+        .await;
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::SimulationTime {
+                seq: Some(6),
+                state
+            } if state.current_time.starts_with("2097-01-02T")
+        ));
     }
 }

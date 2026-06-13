@@ -350,7 +350,10 @@ mod tests {
     use space_game_protocol::DistanceSort;
 
     use super::*;
-    use crate::{config::{ServerConfig, DEFAULT_GAME_TIME}, query::AU_KM};
+    use crate::{
+        config::{ServerConfig, DEFAULT_GAME_TIME},
+        query::AU_KM,
+    };
 
     fn service() -> SolarSystemQueryService {
         ServerConfig::default().query_service().unwrap()
@@ -392,6 +395,23 @@ mod tests {
     }
 
     #[test]
+    fn handles_distance_command_with_explicit_time() {
+        let responses = handle_command_message(
+            &service(),
+            &clock(),
+            8,
+            "distance mars --at 2097-01-02T00:00:00Z",
+        );
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Distance { seq: 8, result }
+                if result.object_id == "mars"
+                    && result.at_game_time == "2097-01-02T00:00:00Z"
+        ));
+    }
+
+    #[test]
     fn handles_limited_and_sorted_distances() {
         let responses =
             handle_command_message(&service(), &clock(), 9, "distances --limit 3 --sort distance");
@@ -407,6 +427,27 @@ mod tests {
     }
 
     #[test]
+    fn handles_distances_with_explicit_time() {
+        let responses = handle_command_message(
+            &service(),
+            &clock(),
+            9,
+            "distances --limit 2 --at 2097-01-02T00:00:00Z",
+        );
+
+        match &responses[1] {
+            ServerToClient::Distances { seq, results } => {
+                assert_eq!(*seq, 9);
+                assert_eq!(results.len(), 2);
+                assert!(results
+                    .iter()
+                    .all(|result| result.at_game_time == "2097-01-02T00:00:00Z"));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
     fn handles_status_command() {
         let responses = handle_command_message(&service(), &clock(), 10, "status");
 
@@ -416,6 +457,129 @@ mod tests {
                 seq: Some(10),
                 status
             } if status.observer_label == "demo-observer"
+        ));
+    }
+
+    #[test]
+    fn handles_time_command() {
+        let responses = handle_command_message(&service(), &clock(), 13, "time");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::SimulationTime {
+                seq: Some(13),
+                state
+            } if state.current_time == DEFAULT_GAME_TIME && state.running && state.rate == 1.0
+        ));
+    }
+
+    #[test]
+    fn handles_advance_command() {
+        let clock = clock();
+        let responses = handle_command_message(&service(), &clock, 14, "advance 1 day");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::SimulationTime {
+                seq: Some(14),
+                state
+            } if state.current_time == "2097-01-02T00:00:00Z"
+        ));
+
+        let responses = handle_command_message(&service(), &clock, 15, "time");
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::SimulationTime { state, .. }
+                if state.current_time == "2097-01-02T00:00:00Z"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_advance_command() {
+        let responses = handle_command_message(&service(), &clock(), 16, "advance 1 month");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Error {
+                seq: Some(16),
+                error
+            } if error.code == "unsupported_time_unit"
+        ));
+    }
+
+    #[test]
+    fn handles_typed_simulation_time_request() {
+        let responses = handle_client_message(
+            &service(),
+            &clock(),
+            ClientToServer::RequestSimulationTime { seq: 17 },
+        );
+
+        assert!(matches!(
+            &responses[0],
+            ServerToClient::SimulationTime {
+                seq: Some(17),
+                state
+            } if state.current_time == DEFAULT_GAME_TIME
+        ));
+    }
+
+    #[test]
+    fn handles_typed_simulation_time_advance() {
+        let clock = clock();
+        let responses = handle_client_message(
+            &service(),
+            &clock,
+            ClientToServer::AdvanceSimulationTime {
+                seq: 18,
+                amount: 2,
+                unit: TimeUnit::Hours,
+            },
+        );
+
+        assert!(matches!(
+            &responses[0],
+            ServerToClient::SimulationTime {
+                seq: Some(18),
+                state
+            } if state.current_time == "2097-01-01T02:00:00Z"
+        ));
+    }
+
+    #[test]
+    fn default_distance_uses_advanced_clock() {
+        let clock = clock();
+        let _ = handle_command_message(&service(), &clock, 19, "advance 1 day");
+        let responses = handle_command_message(&service(), &clock, 20, "distance mars");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Distance { result, .. }
+                if result.at_game_time == "2097-01-02T00:00:00Z"
+        ));
+    }
+
+    #[test]
+    fn explicit_distance_time_does_not_mutate_clock() {
+        let clock = clock();
+        let _ = handle_command_message(&service(), &clock, 21, "advance 1 day");
+        let responses = handle_command_message(
+            &service(),
+            &clock,
+            22,
+            "distance mars --at 2097-01-01T00:00:00Z",
+        );
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Distance { result, .. }
+                if result.at_game_time == "2097-01-01T00:00:00Z"
+        ));
+
+        let responses = handle_command_message(&service(), &clock, 23, "time");
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::SimulationTime { state, .. }
+                if state.current_time == "2097-01-02T00:00:00Z"
         ));
     }
 
@@ -445,6 +609,14 @@ mod tests {
         assert_eq!(
             parse_distances_args(&["--limit", "5", "--sort", "distance"]).unwrap(),
             (Some(5), DistanceSort::Distance, None)
+        );
+        assert_eq!(
+            parse_distances_args(&["--at", "2097-01-02T00:00:00Z"]).unwrap(),
+            (
+                None,
+                DistanceSort::Name,
+                Some("2097-01-02T00:00:00Z".to_string())
+            )
         );
     }
 
