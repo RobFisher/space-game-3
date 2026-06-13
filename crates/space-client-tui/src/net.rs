@@ -129,11 +129,52 @@ pub fn handle_terminal_event(app: &mut ClientApp, event: Event) -> Option<Client
         }
         KeyCode::Enter => app.submit_input(),
         KeyCode::Esc => {
-            if !app.cancel_input_mode() {
-                app.should_quit = true;
-            }
+            app.cancel_input_mode();
             None
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyEvent, KeyEventState};
+
+    use super::*;
+
+    #[test]
+    fn esc_does_not_quit_tui() {
+        let mut app = ClientApp::default();
+
+        let message = handle_terminal_event(
+            &mut app,
+            Event::Key(KeyEvent {
+                code: KeyCode::Esc,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            }),
+        );
+
+        assert_eq!(message, None);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn ctrl_c_still_quits_tui() {
+        let mut app = ClientApp::default();
+
+        let message = handle_terminal_event(
+            &mut app,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            }),
+        );
+
+        assert_eq!(message, None);
+        assert!(app.should_quit);
     }
 }
