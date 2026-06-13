@@ -72,6 +72,21 @@ cargo run -p space-client-tui
 
 The client connects to `ws://127.0.0.1:4000/ws` by default.
 
+Run one plain text command against the same server:
+
+```sh
+cargo run -p space-client-tui -- --plain --command objects
+```
+
+Run newline-delimited plain text commands from standard input:
+
+```sh
+printf 'status\nobjects\nquit\n' | cargo run -p space-client-tui -- --plain
+```
+
+Pass `--server ws://host:port/ws` to either mode to connect to a different
+WebSocket endpoint.
+
 The older top-level placeholder binary can still be run with:
 
 ```sh
