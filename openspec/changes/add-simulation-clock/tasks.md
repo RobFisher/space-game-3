@@ -30,6 +30,6 @@
 
 ## 5. Documentation and Validation
 
-- [ ] 5.1 Update README or command help text to mention `time`, `advance`, and optional `--at` distance timestamps.
-- [ ] 5.2 Run relevant Rust tests for protocol, server, ephemeris time behavior, and TUI client changes.
-- [ ] 5.3 Run `openspec validate --all` and resolve any validation issues.
+- [x] 5.1 Update README or command help text to mention `time`, `advance`, and optional `--at` distance timestamps.
+- [x] 5.2 Run relevant Rust tests for protocol, server, ephemeris time behavior, and TUI client changes.
+- [x] 5.3 Run `openspec validate --all` and resolve any validation issues.

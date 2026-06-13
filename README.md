@@ -19,10 +19,14 @@ Supported TUI commands include:
 help
 objects
 distance mars
+distance mars --at 2097-01-02T00:00:00Z
 distances
 distances --limit 10
 distances --sort distance
+distances --at 2097-01-02T00:00:00Z
 status
+time
+advance 10 minutes
 quit
 ```
 
