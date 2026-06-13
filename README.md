@@ -30,6 +30,12 @@ advance 10 minutes
 quit
 ```
 
+Interactive TUI command entry supports Up/Down history browsing, editable
+recalled commands, Ctrl-R reverse history search, and Tab completion for command
+names, server-known object names, supported options, and local `quit`/`exit`.
+Command history is saved for later TUI sessions; empty commands and local exit
+commands are not saved.
+
 ## Project Layout
 
 This repository is a Cargo workspace. Crates live under `crates/`:

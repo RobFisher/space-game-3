@@ -44,7 +44,7 @@
 
 ## 6. Integration and Verification
 
-- [ ] 6.1 Update UI rendering to show normal input, reverse-search mode, completion candidates, and delayed completion pending state.
-- [ ] 6.2 Update README or user-facing command documentation for history, reverse search, and completion keys.
-- [ ] 6.3 Run relevant `cargo test` coverage for protocol, server, and TUI crates.
-- [ ] 6.4 Run `openspec validate --all`.
+- [x] 6.1 Update UI rendering to show normal input, reverse-search mode, completion candidates, and delayed completion pending state.
+- [x] 6.2 Update README or user-facing command documentation for history, reverse search, and completion keys.
+- [x] 6.3 Run relevant `cargo test` coverage for protocol, server, and TUI crates.
+- [x] 6.4 Run `openspec validate --all`.
