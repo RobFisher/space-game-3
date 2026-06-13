@@ -13,6 +13,7 @@ pub enum ClientToServer {
         seq: u64,
         text: String,
     },
+    CompletionRequest(CompletionRequestDto),
     RequestObjects {
         seq: u64,
     },
@@ -57,6 +58,7 @@ pub enum ServerToClient {
         accepted: bool,
         message: Option<String>,
     },
+    CompletionResponse(CompletionResponseDto),
     Status {
         seq: Option<u64>,
         status: StatusDto,
@@ -152,6 +154,42 @@ pub struct ErrorDto {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompletionRequestDto {
+    pub seq: u64,
+    pub input: String,
+    pub cursor: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompletionResponseDto {
+    pub seq: u64,
+    pub replacement: ReplacementSpanDto,
+    pub candidates: Vec<CompletionCandidateDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplacementSpanDto {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompletionCandidateDto {
+    pub insertion: String,
+    pub display: String,
+    pub kind: CompletionCandidateKindDto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionCandidateKindDto {
+    Command,
+    Object,
+    Option,
+    LocalCommand,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +210,52 @@ mod tests {
         };
 
         assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn completion_request_round_trips() {
+        let msg = ClientToServer::CompletionRequest(CompletionRequestDto {
+            seq: 12,
+            input: "distance ma".to_string(),
+            cursor: 11,
+        });
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn completion_response_round_trips() {
+        let msg = ServerToClient::CompletionResponse(CompletionResponseDto {
+            seq: 12,
+            replacement: ReplacementSpanDto { start: 9, end: 11 },
+            candidates: vec![CompletionCandidateDto {
+                insertion: "mars".to_string(),
+                display: "Mars".to_string(),
+                kind: CompletionCandidateKindDto::Object,
+            }],
+        });
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn empty_completion_response_preserves_sequence() {
+        let msg = ServerToClient::CompletionResponse(CompletionResponseDto {
+            seq: 15,
+            replacement: ReplacementSpanDto { start: 0, end: 0 },
+            candidates: Vec::new(),
+        });
+
+        let round_tripped = round_trip(&msg);
+        assert_eq!(round_tripped, msg);
+        assert!(matches!(
+            round_tripped,
+            ServerToClient::CompletionResponse(CompletionResponseDto {
+                seq: 15,
+                candidates,
+                ..
+            }) if candidates.is_empty()
+        ));
     }
 
     #[test]

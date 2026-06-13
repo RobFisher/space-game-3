@@ -1,8 +1,8 @@
 ## 1. Protocol Completion Messages
 
-- [ ] 1.1 Add completion request, completion response, completion candidate, and candidate-kind DTOs to `space-game-protocol`.
-- [ ] 1.2 Include sequence number, input text, cursor byte offset, replacement byte span, insertion text, display text, and candidate kind in the protocol types.
-- [ ] 1.3 Add serialization round-trip tests for completion requests, completion responses, empty candidate responses, and sequence correlation.
+- [x] 1.1 Add completion request, completion response, completion candidate, and candidate-kind DTOs to `space-game-protocol`.
+- [x] 1.2 Include sequence number, input text, cursor byte offset, replacement byte span, insertion text, display text, and candidate kind in the protocol types.
+- [x] 1.3 Add serialization round-trip tests for completion requests, completion responses, empty candidate responses, and sequence correlation.
 
 ## 2. Server Completion Logic
 
