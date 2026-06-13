@@ -2,8 +2,8 @@ use std::{io, time::Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use space_game_protocol::{
-    ClientToServer, DistanceResultDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto,
-    StatusDto,
+    ClientToServer, CompletionCandidateDto, DistanceResultDto, ObjectSummaryDto, ServerToClient,
+    SimulationTimeDto, StatusDto,
 };
 
 use crate::{
@@ -143,11 +143,25 @@ impl ClientApp {
     }
 
     pub fn cancel_input_mode(&mut self) -> bool {
-        self.command_input.cancel_reverse_search()
+        self.command_input.cancel_reverse_search() || self.command_input.cancel_pending_completion()
     }
 
     pub fn complete_local_command(&mut self) -> bool {
         self.command_input.complete_local_command()
+    }
+
+    pub fn request_completion(&mut self, now: Instant) -> ClientToServer {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        ClientToServer::CompletionRequest(self.command_input.completion_request(seq, now))
+    }
+
+    pub fn completion_candidates(&self) -> &[CompletionCandidateDto] {
+        self.command_input.completion_candidates()
+    }
+
+    pub fn show_completion_pending(&self, now: Instant) -> bool {
+        self.command_input.show_completion_pending(now)
     }
 
     pub fn submit_input(&mut self) -> Option<ClientToServer> {
@@ -193,7 +207,9 @@ impl ClientApp {
                 }
             }
             ServerToClient::CommandAck { .. } => {}
-            ServerToClient::CompletionResponse(_) => {}
+            ServerToClient::CompletionResponse(response) => {
+                self.command_input.apply_completion_response(response);
+            }
             ServerToClient::Status { status, .. } => self.apply_status(status),
             ServerToClient::Objects { objects, .. } => self.display_objects(objects),
             ServerToClient::Distance { result, .. } => self.display_distance(result),

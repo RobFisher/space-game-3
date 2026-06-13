@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use color_eyre::eyre::{eyre, Result};
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
@@ -121,8 +121,11 @@ pub fn handle_terminal_event(app: &mut ClientApp, event: Event) -> Option<Client
             None
         }
         KeyCode::Tab => {
-            app.complete_local_command();
-            None
+            if app.complete_local_command() {
+                None
+            } else {
+                Some(app.request_completion(Instant::now()))
+            }
         }
         KeyCode::Enter => app.submit_input(),
         KeyCode::Esc => {

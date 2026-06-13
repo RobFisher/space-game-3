@@ -1,11 +1,15 @@
 use std::time::Instant;
 
-use space_game_protocol::{CompletionCandidateDto, CompletionCandidateKindDto};
+use space_game_protocol::{
+    CompletionCandidateDto, CompletionCandidateKindDto, CompletionRequestDto,
+    CompletionResponseDto, ReplacementSpanDto,
+};
 use tui_input::{Input, InputRequest};
 
 use crate::history::DEFAULT_MAX_HISTORY;
 
 const LOCAL_COMMANDS: &[&str] = &["exit", "quit"];
+const COMPLETION_SPINNER_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Debug, Clone)]
 pub struct CommandInputController {
@@ -87,6 +91,7 @@ impl CommandInputController {
         }
         self.leave_history_browse_for_edit();
         self.completion_candidates.clear();
+        self.pending_completion = None;
         self.input.handle(InputRequest::InsertChar(ch));
     }
 
@@ -98,6 +103,7 @@ impl CommandInputController {
         }
         self.leave_history_browse_for_edit();
         self.completion_candidates.clear();
+        self.pending_completion = None;
         self.input.handle(InputRequest::DeletePrevChar);
     }
 
@@ -124,6 +130,7 @@ impl CommandInputController {
         self.history_cursor = Some(next_index);
         self.input = Input::new(self.history[next_index].clone());
         self.completion_candidates.clear();
+        self.pending_completion = None;
     }
 
     pub fn history_next(&mut self) {
@@ -144,6 +151,7 @@ impl CommandInputController {
             self.history_draft.clear();
         }
         self.completion_candidates.clear();
+        self.pending_completion = None;
     }
 
     pub fn start_reverse_search(&mut self) {
@@ -198,6 +206,7 @@ impl CommandInputController {
 
     pub fn complete_local_command(&mut self) -> bool {
         self.completion_candidates.clear();
+        self.pending_completion = None;
         let value = self.input.value();
         if value.split_whitespace().count() > 1 || value.starts_with(char::is_whitespace) {
             return false;
@@ -241,6 +250,69 @@ impl CommandInputController {
 
     pub fn clear_pending_completion(&mut self) {
         self.pending_completion = None;
+    }
+
+    pub fn cancel_pending_completion(&mut self) -> bool {
+        let was_pending = self.pending_completion.is_some();
+        self.pending_completion = None;
+        was_pending
+    }
+
+    pub fn completion_request(&mut self, seq: u64, requested_at: Instant) -> CompletionRequestDto {
+        self.set_pending_completion(seq, requested_at);
+        self.completion_candidates.clear();
+        CompletionRequestDto {
+            seq,
+            input: self.input.value().to_string(),
+            cursor: self.cursor_byte(),
+        }
+    }
+
+    pub fn apply_completion_response(&mut self, response: CompletionResponseDto) -> bool {
+        let Some(pending) = &self.pending_completion else {
+            return false;
+        };
+        if pending.seq != response.seq {
+            return false;
+        }
+        self.pending_completion = None;
+        self.completion_candidates.clear();
+
+        match response.candidates.len() {
+            0 => true,
+            1 => {
+                let candidate = &response.candidates[0];
+                self.replace_span(&response.replacement, &candidate.insertion);
+                true
+            }
+            _ => {
+                let replacement_text = self
+                    .input
+                    .value()
+                    .get(response.replacement.start..response.replacement.end)
+                    .unwrap_or_default()
+                    .to_string();
+                let common_prefix = longest_common_prefix(
+                    response
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.insertion.as_str()),
+                );
+                if common_prefix.len() > replacement_text.len()
+                    && common_prefix.starts_with(&replacement_text)
+                {
+                    self.replace_span(&response.replacement, &common_prefix);
+                }
+                self.completion_candidates = response.candidates;
+                true
+            }
+        }
+    }
+
+    pub fn show_completion_pending(&self, now: Instant) -> bool {
+        self.pending_completion.as_ref().is_some_and(|pending| {
+            now.duration_since(pending.requested_at) > COMPLETION_SPINNER_DELAY
+        })
     }
 
     pub fn submit(&mut self) -> Option<String> {
@@ -298,6 +370,26 @@ impl CommandInputController {
         }
     }
 
+    fn replace_span(&mut self, replacement: &ReplacementSpanDto, insertion: &str) {
+        let value = self.input.value();
+        if replacement.start > replacement.end
+            || replacement.end > value.len()
+            || !value.is_char_boundary(replacement.start)
+            || !value.is_char_boundary(replacement.end)
+        {
+            return;
+        }
+
+        let mut next = String::with_capacity(
+            value.len() - (replacement.end - replacement.start) + insertion.len(),
+        );
+        next.push_str(&value[..replacement.start]);
+        next.push_str(insertion);
+        next.push_str(&value[replacement.end..]);
+        let cursor = byte_to_char(&next, replacement.start + insertion.len());
+        self.input = Input::new(next).with_cursor(cursor);
+    }
+
     fn leave_history_browse_for_edit(&mut self) {
         self.history_cursor = None;
         self.history_draft.clear();
@@ -344,9 +436,39 @@ fn char_to_byte(value: &str, char_index: usize) -> usize {
         .map_or(value.len(), |(index, _)| index)
 }
 
+fn byte_to_char(value: &str, byte_index: usize) -> usize {
+    value[..byte_index].chars().count()
+}
+
+fn longest_common_prefix<'a>(mut values: impl Iterator<Item = &'a str>) -> String {
+    let Some(first) = values.next() else {
+        return String::new();
+    };
+    let mut prefix = first.to_string();
+    for value in values {
+        while !value.starts_with(&prefix) {
+            let Some((index, _)) = prefix.char_indices().last() else {
+                return String::new();
+            };
+            prefix.truncate(index);
+        }
+    }
+    prefix
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
+
+    fn candidate(text: &str) -> CompletionCandidateDto {
+        CompletionCandidateDto {
+            insertion: text.to_string(),
+            display: text.to_string(),
+            kind: CompletionCandidateKindDto::Object,
+        }
+    }
 
     #[test]
     fn recalled_history_entries_are_editable() {
@@ -447,5 +569,84 @@ mod tests {
 
         assert_eq!(input.history().len(), 1_000);
         assert_eq!(input.history().first().unwrap(), "cmd-5");
+    }
+
+    #[test]
+    fn completion_request_includes_input_and_cursor_byte_offset() {
+        let mut input = CommandInputController::default();
+        input.set_value("distance ma".to_string());
+        let now = Instant::now();
+
+        let request = input.completion_request(9, now);
+
+        assert_eq!(request.seq, 9);
+        assert_eq!(request.input, "distance ma");
+        assert_eq!(request.cursor, 11);
+        assert_eq!(input.pending_completion().unwrap().seq, 9);
+    }
+
+    #[test]
+    fn single_completion_candidate_replaces_span() {
+        let mut input = CommandInputController::default();
+        input.set_value("distance ma".to_string());
+        let _ = input.completion_request(10, Instant::now());
+
+        assert!(input.apply_completion_response(CompletionResponseDto {
+            seq: 10,
+            replacement: ReplacementSpanDto { start: 9, end: 11 },
+            candidates: vec![candidate("Mars")],
+        }));
+
+        assert_eq!(input.value(), "distance Mars");
+        assert_eq!(input.cursor_byte(), "distance Mars".len());
+    }
+
+    #[test]
+    fn multi_candidate_response_applies_longest_common_prefix() {
+        let mut input = CommandInputController::default();
+        input.set_value("distance mar".to_string());
+        let _ = input.completion_request(11, Instant::now());
+
+        assert!(input.apply_completion_response(CompletionResponseDto {
+            seq: 11,
+            replacement: ReplacementSpanDto { start: 9, end: 12 },
+            candidates: vec![candidate("martian-base"), candidate("martian-station")],
+        }));
+
+        assert_eq!(input.value(), "distance martian-");
+        assert_eq!(input.completion_candidates().len(), 2);
+    }
+
+    #[test]
+    fn completion_pending_indicator_obeys_threshold() {
+        let mut input = CommandInputController::default();
+        let now = Instant::now();
+        let _ = input.completion_request(12, now);
+
+        assert!(!input.show_completion_pending(now + Duration::from_millis(200)));
+        assert!(input.show_completion_pending(now + Duration::from_millis(201)));
+    }
+
+    #[test]
+    fn cancellation_and_stale_completion_responses_are_ignored() {
+        let mut input = CommandInputController::default();
+        input.set_value("distance ma".to_string());
+        let _ = input.completion_request(13, Instant::now());
+        assert!(input.cancel_pending_completion());
+
+        assert!(!input.apply_completion_response(CompletionResponseDto {
+            seq: 13,
+            replacement: ReplacementSpanDto { start: 9, end: 11 },
+            candidates: vec![candidate("Mars")],
+        }));
+        assert_eq!(input.value(), "distance ma");
+
+        let _ = input.completion_request(14, Instant::now());
+        assert!(!input.apply_completion_response(CompletionResponseDto {
+            seq: 99,
+            replacement: ReplacementSpanDto { start: 9, end: 11 },
+            candidates: vec![candidate("Mars")],
+        }));
+        assert_eq!(input.value(), "distance ma");
     }
 }

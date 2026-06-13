@@ -34,13 +34,13 @@
 
 ## 5. TUI Autocomplete UX
 
-- [ ] 5.1 Send protocol completion requests on Tab with the current input text and cursor byte offset.
-- [ ] 5.2 Apply single-candidate responses using the server-provided replacement span and cursor placement.
-- [ ] 5.3 For multi-candidate responses, apply the longest common insertion prefix when it extends the current replacement text.
-- [ ] 5.4 Display remaining completion candidates in a compact command-area list or popup without submitting a command.
-- [ ] 5.5 Show an autocomplete spinner or pending indicator only after a request has been pending for more than 0.2 seconds.
-- [ ] 5.6 Cancel pending completion locally on Esc and ignore stale or canceled completion responses.
-- [ ] 5.7 Add view-model/rendering tests for completion request creation, single-candidate application, longest-common-prefix application, multi-candidate display, spinner threshold behavior, cancellation, and stale response handling.
+- [x] 5.1 Send protocol completion requests on Tab with the current input text and cursor byte offset.
+- [x] 5.2 Apply single-candidate responses using the server-provided replacement span and cursor placement.
+- [x] 5.3 For multi-candidate responses, apply the longest common insertion prefix when it extends the current replacement text.
+- [x] 5.4 Display remaining completion candidates in a compact command-area list or popup without submitting a command.
+- [x] 5.5 Show an autocomplete spinner or pending indicator only after a request has been pending for more than 0.2 seconds.
+- [x] 5.6 Cancel pending completion locally on Esc and ignore stale or canceled completion responses.
+- [x] 5.7 Add view-model/rendering tests for completion request creation, single-candidate application, longest-common-prefix application, multi-candidate display, spinner threshold behavior, cancellation, and stale response handling.
 
 ## 6. Integration and Verification
 
