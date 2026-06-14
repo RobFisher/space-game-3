@@ -1,7 +1,7 @@
 ## 1. Protocol and Data Model
 
-- [ ] 1.1 Add shared flight plan DTOs and server response variants to `space-game-protocol`.
-- [ ] 1.2 Add protocol serialization tests for active flight plan responses and no-active-plan responses.
+- [x] 1.1 Add shared flight plan DTOs and server response variants to `space-game-protocol`.
+- [x] 1.2 Add protocol serialization tests for active flight plan responses and no-active-plan responses.
 - [ ] 1.3 Add server-side flight plan structs, statuses, target representation, acceleration validation, and id generation.
 
 ## 2. Flight Planning and Ship Resolution

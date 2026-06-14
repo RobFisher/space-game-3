@@ -79,6 +79,10 @@ pub enum ServerToClient {
         seq: u64,
         ship: ShipStateDto,
     },
+    FlightPlan {
+        seq: u64,
+        plan: Option<FlightPlanDto>,
+    },
     LocationSummary {
         seq: u64,
         summary: LocationSummaryDto,
@@ -173,6 +177,36 @@ pub struct ShipStateDto {
     pub frame: String,
     pub game_time: String,
     pub quality: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlightPlanDto {
+    pub plan_id: String,
+    pub ship_id: String,
+    pub target: FlightPlanTargetDto,
+    pub departure_time: String,
+    pub arrival_time: String,
+    pub duration_seconds: f64,
+    pub acceleration_km_s2: f64,
+    pub status: FlightPlanStatusDto,
+    pub quality: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FlightPlanTargetDto {
+    Object {
+        object_id: String,
+        display_name: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FlightPlanStatusDto {
+    Active,
+    Completed,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -326,6 +360,47 @@ mod tests {
         };
 
         assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn active_flight_plan_response_round_trips() {
+        let msg = ServerToClient::FlightPlan {
+            seq: 14,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                duration_seconds: 10_800.0,
+                acceleration_km_s2: 0.02,
+                status: FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn no_active_flight_plan_response_preserves_sequence() {
+        let msg = ServerToClient::FlightPlan {
+            seq: 15,
+            plan: None,
+        };
+
+        let round_tripped = round_trip(&msg);
+        assert_eq!(round_tripped, msg);
+        assert!(matches!(
+            round_tripped,
+            ServerToClient::FlightPlan {
+                seq: 15,
+                plan: None
+            }
+        ));
     }
 
     #[test]
