@@ -48,6 +48,30 @@ The TUI client SHALL send supported user-entered command text to the server usin
 - **WHEN** the user enters `distance mars`
 - **THEN** the client sends a command message containing `distance mars`
 
+### Requirement: Location summary presentation
+
+The TUI client SHALL let users request the current observer location with `where`, request object locations with `where <object> [--at <timestamp>]`, and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
+
+#### Scenario: Submit where command
+
+- **WHEN** the user enters `where`
+- **THEN** the client sends a command message containing `where`
+
+#### Scenario: Submit where object command
+
+- **WHEN** the user enters `where mars --at 2097-01-02T00:00:00Z`
+- **THEN** the client sends a command message containing `where mars --at 2097-01-02T00:00:00Z`
+
+#### Scenario: Display location summary
+
+- **WHEN** the client receives a location summary response
+- **THEN** it appends a readable line containing the location label, nearest known object, distance, frame, and simulation time to the output log
+
+#### Scenario: Hide raw coordinates by default
+
+- **WHEN** the client displays a location summary response
+- **THEN** the output does not include raw x/y/z coordinates by default
+
 ### Requirement: Advancing clock display
 
 The TUI client SHALL display an advancing simulation clock based on the latest server time sample.
@@ -175,6 +199,15 @@ line-oriented text suitable for automated assertions.
 - **WHEN** plain text mode receives a protocol error for a submitted command
 - **THEN** it prints a plain text error line containing the error code and
   message
+
+### Requirement: Plain text location output
+
+Plain text mode SHALL print location summary responses as deterministic line-oriented text suitable for automated assertions.
+
+#### Scenario: Print location summary response
+
+- **WHEN** plain text mode receives a location summary response for a submitted `where` command
+- **THEN** it prints a plain text line containing the location label, nearest known object, distance, frame, and simulation time
 
 ### Requirement: Readline-style command history
 
