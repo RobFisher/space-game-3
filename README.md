@@ -28,6 +28,8 @@ status
 time
 advance 10 minutes
 where
+where mars
+where mars --at 2097-01-02T00:00:00Z
 quit
 ```
 

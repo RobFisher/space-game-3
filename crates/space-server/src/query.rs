@@ -194,12 +194,48 @@ impl SolarSystemQueryService {
 
     pub fn location_summary(&self, at: GameTime) -> Result<LocationSummaryDto, QueryError> {
         let observer_state = self.observer.state_at(at.clone());
+        self.location_summary_for_state(
+            None,
+            self.observer.label.clone(),
+            "observer".to_string(),
+            &observer_state,
+            at,
+        )
+    }
+
+    pub fn object_location_summary(
+        &self,
+        object_query: &str,
+        at: GameTime,
+    ) -> Result<LocationSummaryDto, QueryError> {
+        let object = self.resolve_object(object_query)?;
+        let subject_state = self.world.state(object.id.as_str(), at.clone())?;
+        self.location_summary_for_state(
+            Some(object.id.to_string()),
+            object.name,
+            "object".to_string(),
+            &subject_state,
+            at,
+        )
+    }
+
+    fn location_summary_for_state(
+        &self,
+        subject_id: Option<String>,
+        subject_label: String,
+        subject_type: String,
+        subject_state: &StateVector,
+        at: GameTime,
+    ) -> Result<LocationSummaryDto, QueryError> {
         let mut nearest: Option<(ObjectSummary, f64, EphemerisQuality)> = None;
 
         for object in self.world.list_objects() {
+            if subject_id.as_deref() == Some(object.id.as_str()) {
+                continue;
+            }
             let target_state = self.world.state(object.id.as_str(), at.clone())?;
             let (distance_km, quality) =
-                self.distance_between_states(&object, &observer_state, &target_state)?;
+                self.distance_between_states(&object, subject_state, &target_state)?;
             let replace = nearest
                 .as_ref()
                 .map(|(_, nearest_distance, _)| distance_km < *nearest_distance)
@@ -212,8 +248,10 @@ impl SolarSystemQueryService {
         let (nearest_object, distance_km, quality) =
             nearest.ok_or_else(|| QueryError::UnknownObject("nearest object".to_string()))?;
         Ok(LocationSummaryDto {
-            observer_label: self.observer.label.clone(),
-            frame: frame_label(&observer_state.frame),
+            subject_id,
+            subject_label,
+            subject_type,
+            frame: frame_label(&subject_state.frame),
             game_time: at.to_string(),
             nearest_object_id: nearest_object.id.to_string(),
             nearest_object_name: nearest_object.name,
@@ -536,7 +574,9 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
 
         let summary = service.location_summary(epoch()).unwrap();
 
-        assert_eq!(summary.observer_label, "test-observer");
+        assert_eq!(summary.subject_id, None);
+        assert_eq!(summary.subject_label, "test-observer");
+        assert_eq!(summary.subject_type, "observer");
         assert_eq!(summary.frame, "solar_system_barycentric_j2000");
         assert_eq!(summary.game_time, DEFAULT_GAME_TIME);
         assert_eq!(summary.nearest_object_id, "near");
@@ -548,5 +588,49 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
         assert!(json.get("x").is_none());
         assert!(json.get("y").is_none());
         assert!(json.get("z").is_none());
+    }
+
+    #[test]
+    fn builds_object_location_summary_and_excludes_subject() {
+        let registry = ObjectRegistry::from_toml_str(
+            r#"
+[[objects]]
+id = "subject"
+name = "Subject Station"
+kind = "station"
+[objects.source]
+type = "static_state"
+position_km = { x = 10.0, y = 0.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+
+[[objects]]
+id = "near"
+name = "Near Station"
+kind = "station"
+[objects.source]
+type = "static_state"
+position_km = { x = 13.0, y = 4.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+"#,
+        )
+        .unwrap();
+        let world = SolarSystemBuilder::new()
+            .object_registry_data(registry)
+            .build()
+            .unwrap();
+        let service = SolarSystemQueryService::new(
+            "test-server".to_string(),
+            world,
+            observer_at(Vec3Km::ZERO, FrameId::SolarSystemBarycentricJ2000),
+        );
+
+        let summary = service.object_location_summary("subject", epoch()).unwrap();
+
+        assert_eq!(summary.subject_id.as_deref(), Some("subject"));
+        assert_eq!(summary.subject_label, "Subject Station");
+        assert_eq!(summary.subject_type, "object");
+        assert_eq!(summary.nearest_object_id, "near");
+        assert_eq!(summary.nearest_object_name, "Near Station");
+        assert_eq!(summary.distance_km, 5.0);
     }
 }

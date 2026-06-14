@@ -315,7 +315,7 @@ impl ClientApp {
     fn display_location(&mut self, summary: LocationSummaryDto) {
         self.push_output(format!(
             "{} is nearest {} at {:.3} AU / {:.0} km (frame {}, time {})",
-            summary.observer_label,
+            summary.subject_label,
             summary.nearest_object_name,
             summary.distance_au,
             summary.distance_km,
@@ -381,6 +381,20 @@ mod tests {
             Some(ClientToServer::Command {
                 seq: 1,
                 text: "where".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn submits_where_object_command() {
+        let mut app = ClientApp::default();
+        app.set_input("where mars --at 2097-01-02T00:00:00Z");
+
+        assert_eq!(
+            app.submit_input(),
+            Some(ClientToServer::Command {
+                seq: 1,
+                text: "where mars --at 2097-01-02T00:00:00Z".to_string()
             })
         );
     }
@@ -530,11 +544,13 @@ mod tests {
         app.apply_server_message(ServerToClient::LocationSummary {
             seq: 4,
             summary: LocationSummaryDto {
-                observer_label: "demo-observer".to_string(),
+                subject_id: Some("mars".to_string()),
+                subject_label: "Mars".to_string(),
+                subject_type: "object".to_string(),
                 frame: "solar_system_barycentric_j2000".to_string(),
                 game_time: "2097-01-01T00:00:00Z".to_string(),
-                nearest_object_id: "earth".to_string(),
-                nearest_object_name: "Earth".to_string(),
+                nearest_object_id: "phobos".to_string(),
+                nearest_object_name: "Phobos".to_string(),
                 distance_km: 42_000.0,
                 distance_au: 0.000_280_753,
                 quality: Some("fictional".to_string()),
@@ -556,7 +572,7 @@ mod tests {
         let location_line = app
             .output_lines
             .iter()
-            .find(|line| line.contains("demo-observer is nearest Earth"))
+            .find(|line| line.contains("Mars is nearest Phobos"))
             .expect("location summary output");
         assert!(location_line.contains("solar_system_barycentric_j2000"));
         assert!(location_line.contains("2097-01-01T00:00:00Z"));

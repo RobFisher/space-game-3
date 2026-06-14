@@ -184,7 +184,7 @@ fn complete_input(
         return empty_completion(cursor);
     };
     match command.as_str() {
-        "distance" => {
+        "distance" | "where" => {
             if prefix.starts_with("--") {
                 return CompletionResult {
                     replacement,
@@ -395,7 +395,7 @@ fn handle_command(
     match command.as_str() {
         "help" => Ok(vec![ServerToClient::OutputLine {
             seq: Some(seq),
-            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, time, advance <amount> <seconds|minutes|hours|days>, where, quit".to_string(),
+            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
         }]),
         "objects" => Ok(vec![ServerToClient::Objects {
             seq,
@@ -418,12 +418,17 @@ fn handle_command(
         "status" => Ok(vec![status_message(service, clock, Some(seq))]),
         "time" => Ok(vec![simulation_time_message(clock, Some(seq))]),
         "where" => {
-            if let Some(extra) = words.get(1) {
-                return Err(CommandError::UnknownCommand(format!("where {extra}")));
+            if words.len() == 1 {
+                return Ok(vec![ServerToClient::LocationSummary {
+                    seq,
+                    summary: service.location_summary(effective_time(clock, None)?)?,
+                }]);
             }
+            let (query, at_game_time) = parse_distance_args(&words[1..])?;
             Ok(vec![ServerToClient::LocationSummary {
                 seq,
-                summary: service.location_summary(effective_time(clock, None)?)?,
+                summary: service
+                    .object_location_summary(&query, effective_time(clock, at_game_time)?)?,
             }])
         }
         "advance" => {
@@ -734,9 +739,41 @@ mod tests {
         assert!(matches!(
             &responses[1],
             ServerToClient::LocationSummary { seq: 12, summary }
-                if summary.observer_label == "demo-observer"
+                if summary.subject_label == "demo-observer"
+                    && summary.subject_type == "observer"
                     && summary.frame == "solar_system_barycentric_j2000"
                     && !summary.nearest_object_id.is_empty()
+        ));
+    }
+
+    #[test]
+    fn handles_where_object_command_with_sequence() {
+        let responses = handle_command_message(&service(), &clock(), 12, "where mars");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::LocationSummary { seq: 12, summary }
+                if summary.subject_id.as_deref() == Some("mars")
+                    && summary.subject_label == "Mars"
+                    && summary.subject_type == "object"
+                    && summary.nearest_object_id != "mars"
+        ));
+    }
+
+    #[test]
+    fn handles_where_object_command_with_explicit_time() {
+        let responses = handle_command_message(
+            &service(),
+            &clock(),
+            12,
+            "where mars --at 2097-01-02T00:00:00Z",
+        );
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::LocationSummary { seq: 12, summary }
+                if summary.subject_id.as_deref() == Some("mars")
+                    && summary.game_time == "2097-01-02T00:00:00Z"
         ));
     }
 
@@ -857,6 +894,30 @@ mod tests {
                         .collect::<Vec<_>>(),
                     vec!["where"]
                 );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_where_object_argument() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 28,
+                input: "where ma".to_string(),
+                cursor: 8,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 6);
+                assert_eq!(response.replacement.end, 8);
+                assert!(response.candidates.iter().any(|candidate| {
+                    candidate.insertion == "Mars"
+                        && candidate.kind == CompletionCandidateKindDto::Object
+                }));
             }
             other => panic!("unexpected response: {other:?}"),
         }

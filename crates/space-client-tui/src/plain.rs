@@ -199,7 +199,7 @@ fn format_distance(result: &DistanceResultDto) -> String {
 fn format_location(summary: &LocationSummaryDto) -> String {
     format!(
         "Location: {} nearest {} ({}) at {:.3} AU / {:.0} km frame={} game_time={}",
-        summary.observer_label,
+        summary.subject_label,
         summary.nearest_object_name,
         summary.nearest_object_id,
         summary.distance_au,
@@ -320,11 +320,13 @@ mod tests {
             &ServerToClient::LocationSummary {
                 seq: 7,
                 summary: LocationSummaryDto {
-                    observer_label: "demo-observer".to_string(),
+                    subject_id: Some("mars".to_string()),
+                    subject_label: "Mars".to_string(),
+                    subject_type: "object".to_string(),
                     frame: "solar_system_barycentric_j2000".to_string(),
                     game_time: "2097-01-01T00:00:00Z".to_string(),
-                    nearest_object_id: "earth".to_string(),
-                    nearest_object_name: "Earth".to_string(),
+                    nearest_object_id: "phobos".to_string(),
+                    nearest_object_name: "Phobos".to_string(),
                     distance_km: 42_000.0,
                     distance_au: 0.000_280_753,
                     quality: Some("fictional".to_string()),
@@ -335,7 +337,7 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["Location: demo-observer nearest Earth (earth) at 0.000 AU / 42000 km frame=solar_system_barycentric_j2000 game_time=2097-01-01T00:00:00Z"]
+            vec!["Location: Mars nearest Phobos (phobos) at 0.000 AU / 42000 km frame=solar_system_barycentric_j2000 game_time=2097-01-01T00:00:00Z"]
         );
         assert!(!lines[0].contains(" x"));
         assert!(!lines[0].contains(" y"));

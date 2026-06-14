@@ -137,7 +137,9 @@ pub struct DistanceResultDto {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LocationSummaryDto {
-    pub observer_label: String,
+    pub subject_id: Option<String>,
+    pub subject_label: String,
+    pub subject_type: String,
     pub frame: String,
     pub game_time: String,
     pub nearest_object_id: String,
@@ -327,7 +329,9 @@ mod tests {
         let msg = ServerToClient::LocationSummary {
             seq: 9,
             summary: LocationSummaryDto {
-                observer_label: "demo-observer".to_string(),
+                subject_id: None,
+                subject_label: "demo-observer".to_string(),
+                subject_type: "observer".to_string(),
                 frame: "solar_system_barycentric_j2000".to_string(),
                 game_time: "2097-01-01T00:00:00Z".to_string(),
                 nearest_object_id: "earth".to_string(),
@@ -346,11 +350,13 @@ mod tests {
         let msg = ServerToClient::LocationSummary {
             seq: 9,
             summary: LocationSummaryDto {
-                observer_label: "demo-observer".to_string(),
+                subject_id: Some("mars".to_string()),
+                subject_label: "Mars".to_string(),
+                subject_type: "object".to_string(),
                 frame: "solar_system_barycentric_j2000".to_string(),
                 game_time: "2097-01-01T00:00:00Z".to_string(),
-                nearest_object_id: "earth".to_string(),
-                nearest_object_name: "Earth".to_string(),
+                nearest_object_id: "phobos".to_string(),
+                nearest_object_name: "Phobos".to_string(),
                 distance_km: 42_000.0,
                 distance_au: 0.000_280_753,
                 quality: Some("fictional".to_string()),

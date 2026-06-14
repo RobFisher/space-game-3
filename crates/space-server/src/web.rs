@@ -258,18 +258,42 @@ mod tests {
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::LocationSummary { seq: 5, summary }
-                if summary.observer_label == "demo-observer"
+                if summary.subject_label == "demo-observer"
+                    && summary.subject_type == "observer"
         ));
 
         send_protocol(
             &mut socket,
-            ClientToServer::RequestSimulationTime { seq: 6 },
+            ClientToServer::Command {
+                seq: 6,
+                text: "where mars --at 2097-01-02T00:00:00Z".to_string(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::CommandAck {
+                seq: 6,
+                accepted: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::LocationSummary { seq: 6, summary }
+                if summary.subject_id.as_deref() == Some("mars")
+                    && summary.game_time == "2097-01-02T00:00:00Z"
+        ));
+
+        send_protocol(
+            &mut socket,
+            ClientToServer::RequestSimulationTime { seq: 7 },
         )
         .await;
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::SimulationTime {
-                seq: Some(6),
+                seq: Some(7),
                 state
             } if state.running && state.rate == 1.0
         ));
@@ -277,7 +301,7 @@ mod tests {
         send_protocol(
             &mut socket,
             ClientToServer::AdvanceSimulationTime {
-                seq: 7,
+                seq: 8,
                 amount: 1,
                 unit: space_game_protocol::TimeUnit::Days,
             },
@@ -286,7 +310,7 @@ mod tests {
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::SimulationTime {
-                seq: Some(7),
+                seq: Some(8),
                 state
             } if state.current_time.starts_with("2097-01-02T")
         ));
