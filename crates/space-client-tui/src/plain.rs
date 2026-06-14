@@ -1,8 +1,9 @@
 use color_eyre::eyre::{eyre, Result};
 use futures::{stream::Stream, Sink, SinkExt, StreamExt};
 use space_game_protocol::{
-    ClientToServer, DistanceResultDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
-    ShipStateDto, SimulationTimeDto, StatusDto,
+    ClientToServer, DistanceResultDto, FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto,
+    LocationSummaryDto, ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto,
+    StatusDto,
 };
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::{connect_async, tungstenite, tungstenite::Message};
@@ -70,6 +71,9 @@ pub fn plain_output_lines(message: &ServerToClient, expected_seq: u64) -> Vec<St
         }
         ServerToClient::ShipState { seq, ship } if *seq == expected_seq => {
             vec![format_ship_state(ship)]
+        }
+        ServerToClient::FlightPlan { seq, plan } if *seq == expected_seq => {
+            vec![format_flight_plan(plan.as_ref())]
         }
         ServerToClient::LocationSummary { seq, summary } if *seq == expected_seq => {
             vec![format_location(summary)]
@@ -175,6 +179,7 @@ fn is_command_completion(message: &ServerToClient, expected_seq: u64) -> bool {
         | ServerToClient::Distance { seq, .. }
         | ServerToClient::Distances { seq, .. }
         | ServerToClient::ShipState { seq, .. }
+        | ServerToClient::FlightPlan { seq, .. }
         | ServerToClient::LocationSummary { seq, .. }
         | ServerToClient::Pong { seq } => *seq == expected_seq,
         ServerToClient::Status { seq: Some(seq), .. }
@@ -233,6 +238,35 @@ fn format_ship_state(ship: &ShipStateDto) -> String {
     )
 }
 
+fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
+    let Some(plan) = plan else {
+        return "No active flight plan.".to_string();
+    };
+    let FlightPlanTargetDto::Object {
+        object_id,
+        display_name,
+    } = &plan.target;
+    format!(
+        "Flight plan {}: {} to {} ({}) acceleration={:.3} km/s^2 departure={} arrival={} duration={:.0}s",
+        plan.plan_id,
+        flight_status_label(plan.status),
+        display_name,
+        object_id,
+        plan.acceleration_km_s2,
+        plan.departure_time,
+        plan.arrival_time,
+        plan.duration_seconds
+    )
+}
+
+fn flight_status_label(status: FlightPlanStatusDto) -> &'static str {
+    match status {
+        FlightPlanStatusDto::Active => "active",
+        FlightPlanStatusDto::Completed => "completed",
+        FlightPlanStatusDto::Cancelled => "cancelled",
+    }
+}
+
 fn format_simulation_time(state: &SimulationTimeDto) -> String {
     format!(
         "Simulation time: {} running={} rate={}",
@@ -242,7 +276,10 @@ fn format_simulation_time(state: &SimulationTimeDto) -> String {
 
 #[cfg(test)]
 mod tests {
-    use space_game_protocol::{ErrorDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto};
+    use space_game_protocol::{
+        ErrorDto, FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto, LocationSummaryDto,
+        ObjectSummaryDto, ShipStateDto,
+    };
 
     use super::*;
 
@@ -331,6 +368,69 @@ mod tests {
             lines,
             vec!["Ship: Wayfarer motion=orbiting frame=solar_system_barycentric_j2000 game_time=2097-01-01T00:00:00Z"]
         );
+    }
+
+    #[test]
+    fn formats_flight_plan_response_for_expected_sequence() {
+        let lines = plain_output_lines(
+            &ServerToClient::FlightPlan {
+                seq: 9,
+                plan: Some(FlightPlanDto {
+                    plan_id: "flight-1".to_string(),
+                    ship_id: "player-ship".to_string(),
+                    target: FlightPlanTargetDto::Object {
+                        object_id: "mars".to_string(),
+                        display_name: "Mars".to_string(),
+                    },
+                    departure_time: "2097-01-01T00:00:00Z".to_string(),
+                    arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                    duration_seconds: 10_800.0,
+                    acceleration_km_s2: 0.02,
+                    status: FlightPlanStatusDto::Active,
+                    quality: Some("fictional".to_string()),
+                }),
+            },
+            9,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Flight plan flight-1: active to Mars (mars) acceleration=0.020 km/s^2 departure=2097-01-01T00:00:00Z arrival=2097-01-01T03:00:00Z duration=10800s"]
+        );
+    }
+
+    #[test]
+    fn formats_cancelled_and_no_active_flight_plan_responses() {
+        let cancelled = plain_output_lines(
+            &ServerToClient::FlightPlan {
+                seq: 10,
+                plan: Some(FlightPlanDto {
+                    plan_id: "flight-1".to_string(),
+                    ship_id: "player-ship".to_string(),
+                    target: FlightPlanTargetDto::Object {
+                        object_id: "mars".to_string(),
+                        display_name: "Mars".to_string(),
+                    },
+                    departure_time: "2097-01-01T00:00:00Z".to_string(),
+                    arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                    duration_seconds: 10_800.0,
+                    acceleration_km_s2: 0.02,
+                    status: FlightPlanStatusDto::Cancelled,
+                    quality: Some("fictional".to_string()),
+                }),
+            },
+            10,
+        );
+        let none = plain_output_lines(
+            &ServerToClient::FlightPlan {
+                seq: 11,
+                plan: None,
+            },
+            11,
+        );
+
+        assert!(cancelled[0].contains("Flight plan flight-1: cancelled to Mars"));
+        assert_eq!(none, vec!["No active flight plan."]);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use space_game_protocol::{
     ClientToServer, CompletionCandidateDto, DistanceResultDto, LocationSummaryDto,
     ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto, StatusDto,
 };
+use space_game_protocol::{FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto};
 
 use crate::{
     command_input::{CommandInputController, ReverseSearchView},
@@ -224,6 +225,9 @@ impl ClientApp {
                 }
             }
             ServerToClient::ShipState { ship, .. } => self.display_ship_state(ship),
+            ServerToClient::FlightPlan { plan, .. } => {
+                self.push_output(format_flight_plan(plan.as_ref()));
+            }
             ServerToClient::LocationSummary { summary, .. } => self.display_location(summary),
             ServerToClient::SimulationTime { seq, state } => {
                 self.apply_simulation_time(&state);
@@ -352,6 +356,35 @@ impl ClientApp {
     }
 }
 
+fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
+    let Some(plan) = plan else {
+        return "No active flight plan.".to_string();
+    };
+    let FlightPlanTargetDto::Object {
+        object_id,
+        display_name,
+    } = &plan.target;
+    format!(
+        "Flight plan {}: {} to {} ({}) acceleration={:.3} km/s^2 departure={} arrival={} duration={:.0}s",
+        plan.plan_id,
+        flight_status_label(plan.status),
+        display_name,
+        object_id,
+        plan.acceleration_km_s2,
+        plan.departure_time,
+        plan.arrival_time,
+        plan.duration_seconds
+    )
+}
+
+fn flight_status_label(status: FlightPlanStatusDto) -> &'static str {
+    match status {
+        FlightPlanStatusDto::Active => "active",
+        FlightPlanStatusDto::Completed => "completed",
+        FlightPlanStatusDto::Cancelled => "cancelled",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -361,8 +394,9 @@ mod tests {
     };
 
     use space_game_protocol::{
-        DistanceResultDto, ErrorDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
-        ShipStateDto, SimulationTimeDto, StatusDto,
+        DistanceResultDto, ErrorDto, FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto,
+        LocationSummaryDto, ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto,
+        StatusDto,
     };
 
     use super::*;
@@ -417,6 +451,28 @@ mod tests {
                 text: "where mars --at 2097-01-02T00:00:00Z".to_string()
             })
         );
+    }
+
+    #[test]
+    fn submits_flight_commands() {
+        let cases = [
+            "flight plan mars --accel 0.02",
+            "flight status",
+            "flight cancel",
+        ];
+
+        for command in cases {
+            let mut app = ClientApp::default();
+            app.set_input(command);
+
+            assert_eq!(
+                app.submit_input(),
+                Some(ClientToServer::Command {
+                    seq: 1,
+                    text: command.to_string()
+                })
+            );
+        }
     }
 
     #[test]
@@ -590,6 +646,23 @@ mod tests {
                 quality: Some("fictional".to_string()),
             },
         });
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 6,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                duration_seconds: 10_800.0,
+                acceleration_km_s2: 0.02,
+                status: FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        });
         app.apply_server_message(ServerToClient::Error {
             seq: Some(3),
             error: ErrorDto {
@@ -607,6 +680,10 @@ mod tests {
             .output_lines
             .iter()
             .any(|line| line.contains("Ship: Wayfarer")));
+        assert!(app.output_lines.iter().any(|line| {
+            line.contains("Flight plan flight-1: active to Mars")
+                && line.contains("acceleration=0.020 km/s^2")
+        }));
         let location_line = app
             .output_lines
             .iter()
@@ -621,5 +698,38 @@ mod tests {
             .output_lines
             .iter()
             .any(|line| line.contains("unknown command")));
+    }
+
+    #[test]
+    fn presents_cancelled_and_no_active_flight_plan_responses() {
+        let mut app = ClientApp::default();
+
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 1,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                duration_seconds: 10_800.0,
+                acceleration_km_s2: 0.02,
+                status: FlightPlanStatusDto::Cancelled,
+                quality: Some("fictional".to_string()),
+            }),
+        });
+        app.apply_server_message(ServerToClient::FlightPlan { seq: 2, plan: None });
+
+        assert!(app
+            .output_lines
+            .iter()
+            .any(|line| line.contains("Flight plan flight-1: cancelled to Mars")));
+        assert!(app
+            .output_lines
+            .iter()
+            .any(|line| line == "No active flight plan."));
     }
 }
