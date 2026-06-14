@@ -24,6 +24,7 @@
 - [x] 4.1 Display flight plan responses in the interactive TUI output log.
 - [x] 4.2 Display flight plan responses in plain text mode.
 - [x] 4.3 Add TUI/plain formatting tests for active, cancelled, and no-active-plan responses.
+- [ ] 4.4 Display active flight target, ETA, and countdown in the interactive status pane.
 
 ## 5. Documentation and Validation
 

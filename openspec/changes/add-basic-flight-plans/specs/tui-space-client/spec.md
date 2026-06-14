@@ -29,3 +29,7 @@ The TUI client SHALL present server flight plan responses as readable gameplay t
 #### Scenario: Plain mode displays flight plan response
 - **WHEN** plain text mode receives a flight plan response for a submitted flight command
 - **THEN** it prints a plain text line containing the target, status, acceleration, departure time, arrival time, and duration
+
+#### Scenario: Status pane displays active flight ETA
+- **WHEN** the interactive TUI has received an active flight plan response
+- **THEN** the status pane displays the active flight target, arrival time, and countdown to arrival derived from the current displayed game time
