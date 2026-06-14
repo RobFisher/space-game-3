@@ -1,13 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Observer location summary
+### Requirement: Location summary
 
-The server SHALL provide an authoritative location summary for the current observer by resolving the observer spatial state and comparing it with known object states at the effective simulation time.
+The server SHALL provide an authoritative location summary for the current observer or a named object by resolving the subject spatial state and comparing it with known object states at the effective simulation time.
 
 #### Scenario: Report observer location summary
 
 - **WHEN** a connected client sends the command `where`
-- **THEN** the server responds with the observer label, observer frame, simulation time, nearest known object, distance in kilometers, distance in astronomical units, and spatial quality
+- **THEN** the server responds with the subject label, subject type, frame, simulation time, nearest known object, distance in kilometers, distance in astronomical units, and spatial quality
+
+#### Scenario: Report object location summary
+
+- **WHEN** a connected client sends the command `where mars`
+- **THEN** the server responds with a location summary for the object resolved from `mars`
+
+#### Scenario: Report object location summary at explicit time
+
+- **WHEN** a connected client sends the command `where mars --at 2097-01-02T00:00:00Z`
+- **THEN** the server responds with a location summary whose game time is `2097-01-02T00:00:00Z`
 
 #### Scenario: Location summary uses current simulation time
 
@@ -42,7 +52,7 @@ The server SHALL represent the first-slice observer as a spatial state in the ep
 
 ### Requirement: Server command handling
 
-The server SHALL parse and handle the first-slice commands `help`, `objects`, `distance <object>`, `distance <object> --at <timestamp>`, `distances`, `distances --limit <n>`, `distances --sort distance`, `distances --at <timestamp>`, `status`, `time`, `advance <amount> <seconds|minutes|hours|days>`, and `where`.
+The server SHALL parse and handle the first-slice commands `help`, `objects`, `distance <object>`, `distance <object> --at <timestamp>`, `distances`, `distances --limit <n>`, `distances --sort distance`, `distances --at <timestamp>`, `status`, `time`, `advance <amount> <seconds|minutes|hours|days>`, `where`, `where <object>`, and `where <object> --at <timestamp>`.
 
 #### Scenario: Handle objects command
 
@@ -74,6 +84,11 @@ The server SHALL parse and handle the first-slice commands `help`, `objects`, `d
 - **WHEN** a connected client sends the command `where`
 - **THEN** the server responds with a location summary for the current observer
 
+#### Scenario: Handle where object command
+
+- **WHEN** a connected client sends the command `where mars`
+- **THEN** the server responds with a location summary for the object resolved from `mars`
+
 #### Scenario: Handle unknown command
 
 - **WHEN** a connected client sends a command the server does not support
@@ -96,6 +111,11 @@ The server SHALL answer autocomplete requests using authoritative command metada
 #### Scenario: Complete object argument
 
 - **WHEN** a connected client requests completion for input `distance ma` with the cursor after `ma`
+- **THEN** the server responds with an object candidate for Mars using a replacement span that covers only `ma`
+
+#### Scenario: Complete where object argument
+
+- **WHEN** a connected client requests completion for input `where ma` with the cursor after `ma`
 - **THEN** the server responds with an object candidate for Mars using a replacement span that covers only `ma`
 
 #### Scenario: Complete multi-word object display name

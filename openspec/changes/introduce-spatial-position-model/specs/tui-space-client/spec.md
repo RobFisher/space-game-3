@@ -2,12 +2,17 @@
 
 ### Requirement: Location summary presentation
 
-The TUI client SHALL let users request the current observer location with `where` and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
+The TUI client SHALL let users request the current observer location with `where`, request object locations with `where <object> [--at <timestamp>]`, and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
 
 #### Scenario: Submit where command
 
 - **WHEN** the user enters `where`
 - **THEN** the client sends a command message containing `where`
+
+#### Scenario: Submit where object command
+
+- **WHEN** the user enters `where mars --at 2097-01-02T00:00:00Z`
+- **THEN** the client sends a command message containing `where mars --at 2097-01-02T00:00:00Z`
 
 #### Scenario: Display location summary
 

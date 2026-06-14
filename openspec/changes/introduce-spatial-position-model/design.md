@@ -2,7 +2,7 @@
 
 The ephemeris crate already exposes the right primitive for this change: `StateVector` contains position, velocity, frame, epoch, and quality. Solar system bodies and authored orbital objects can resolve through `SolarSystem::state`, while the server currently keeps its observer as `ObserverLocation { label, frame, position_km }` and calculates distances by subtracting the target position from that raw vector.
 
-The next gameplay features need a stronger server-side model for "where something is" without requiring the TUI to expose Cartesian coordinates to the player. This change promotes the server observer to a state-vector-like model, keeps distance responses backward compatible, and adds a simple `where` command that reports a landmark-based location summary.
+The next gameplay features need a stronger server-side model for "where something is" without requiring the TUI to expose Cartesian coordinates to the player. This change promotes the server observer to a state-vector-like model, keeps distance responses backward compatible, and adds a `where` command that reports a landmark-based location summary for the observer or a named object.
 
 ## Goals / Non-Goals
 
@@ -11,7 +11,7 @@ The next gameplay features need a stronger server-side model for "where somethin
 - Use `StateVector` as the internal position model at the server query boundary.
 - Represent the current observer as a spatial state at the effective simulation time.
 - Derive `distance` and `distances` from observer and target states rather than from a raw observer vector.
-- Add a `where` command and protocol response that summarize the current observer location.
+- Add a `where` command and protocol response that summarize the current observer location or a named object location.
 - Keep TUI output simple and landmark-based, with no default raw coordinate display.
 
 **Non-Goals:**
@@ -44,22 +44,26 @@ Alternative considered: register the observer as another ephemeris object. That 
 
 ### Add a location summary DTO instead of coordinate DTOs
 
-The protocol should add a location summary response for `where` containing location label, frame, simulation time, nearest known object, distance in kilometers and AU, and optional quality. The DTO should not include raw coordinates by default.
+The protocol should add a subject-oriented location summary response for `where` containing subject identity/label, frame, simulation time, nearest known object, distance in kilometers and AU, and optional quality. The DTO should not include raw coordinates by default.
 
 Alternative considered: return the full state vector through the protocol. That would be useful for debugging but would make raw coordinates part of the first user-facing contract.
 
 ### Use nearest known object as the initial location language
 
-The first `where` output should describe the observer relative to the nearest known object at the effective simulation time. This gives the TUI a player-readable answer while leaving richer descriptions such as "in orbit around Earth" or "near Mars" for later.
+The first `where` output should describe the observer or named object relative to the nearest other known object at the effective simulation time. This gives the TUI a player-readable answer while leaving richer descriptions such as "in orbit around Earth" or "near Mars" for later.
 
 Alternative considered: only report observer label and frame. That would prove the state model exists but would not improve user-facing location beyond current status output.
+
+### Preserve bare `where` as the observer shortcut
+
+Bare `where` should continue to summarize the current observer at the current simulation time. `where <object>` should summarize a named object at the current simulation time, and `where <object> --at <timestamp>` should summarize that object at an explicit time. This mirrors the `distance <object> [--at <timestamp>]` command shape without adding coordinate display or arbitrary frame transforms.
 
 ## Risks / Trade-offs
 
 - Frame mismatch errors could become visible once distance code checks state compatibility. Mitigation: keep all first-slice server states in `SolarSystemBarycentricJ2000` and return clear query errors for incompatible frames.
 - The nearest-object summary can be simplistic for large-scale orbital contexts. Mitigation: specify it as an initial Euclidean nearest-known-object summary, not as a navigation or orbital classification.
 - Adding protocol messages expands client/server API surface. Mitigation: add a new response variant while preserving existing distance messages and command behavior.
-- Treating the observer as static means `where` is not yet a ship location. Mitigation: name the output as the current observer/location summary and keep player ship state explicitly out of scope.
+- Treating the observer as static means bare `where` is not yet a ship location. Mitigation: name the output as the current observer/location summary and keep player ship state explicitly out of scope.
 
 ## Migration Plan
 

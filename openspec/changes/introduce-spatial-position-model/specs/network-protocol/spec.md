@@ -2,12 +2,12 @@
 
 ### Requirement: Location summary protocol messages
 
-The protocol SHALL represent server location summary responses containing the current location label, frame, game time, nearest known object identity, nearest known object display name, distance kilometers, distance astronomical units, and optional spatial quality.
+The protocol SHALL represent server location summary responses containing the subject identity/label, subject type, frame, game time, nearest known object identity, nearest known object display name, distance kilometers, distance astronomical units, and optional spatial quality.
 
 #### Scenario: Serialize location summary response
 
 - **WHEN** a server location summary response is serialized to JSON and deserialized again
-- **THEN** the resulting message preserves the sequence number, location label, frame, game time, nearest object fields, distance fields, and quality
+- **THEN** the resulting message preserves the sequence number, subject fields, frame, game time, nearest object fields, distance fields, and quality
 
 #### Scenario: Location summary omits raw coordinates
 

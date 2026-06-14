@@ -37,3 +37,12 @@
 - [x] 6.1 Update README command examples or help text documentation to mention `where`.
 - [x] 6.2 Run relevant Rust tests for protocol, server, and TUI client changes.
 - [x] 6.3 Run `openspec validate --all`.
+
+## 7. Object Location Queries
+
+- [ ] 7.1 Update the location summary DTO and tests from observer-only fields to subject identity/label/type fields.
+- [ ] 7.2 Extend the query service to build location summaries for named objects and exclude the subject from nearest-object selection.
+- [ ] 7.3 Add `where <object> [--at timestamp]` parsing, help text, autocomplete, command tests, and WebSocket coverage.
+- [ ] 7.4 Update TUI and plain text formatting/tests for subject-oriented location summaries.
+- [ ] 7.5 Update README examples for object `where` usage.
+- [ ] 7.6 Run relevant Rust tests and `openspec validate --all`.
