@@ -1,6 +1,9 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use space_game_ephemeris::{FrameId, ObjectRegistry, SolarSystem, SolarSystemBuilder, Vec3Km};
+use space_game_ephemeris::{
+    EphemerisQuality, FrameId, ObjectRegistry, SolarSystem, SolarSystemBuilder, Vec3Km,
+    Vec3KmPerSec,
+};
 
 use crate::query::{ObserverLocation, SolarSystemQueryService};
 
@@ -43,6 +46,8 @@ impl ServerConfig {
                 label: "demo-observer".to_string(),
                 frame: FrameId::SolarSystemBarycentricJ2000,
                 position_km: Vec3Km::new(149_597_870.7, 0.0, 0.0),
+                velocity_km_s: Vec3KmPerSec::ZERO,
+                quality: EphemerisQuality::Fictional,
             },
         ))
     }

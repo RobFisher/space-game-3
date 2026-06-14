@@ -6,18 +6,18 @@
 
 ## 2. Server Spatial State Model
 
-- [ ] 2.1 Refactor the server observer model so it resolves to a `StateVector` at a requested `GameTime`.
-- [ ] 2.2 Add frame compatibility checks for observer-target distance calculations.
-- [ ] 2.3 Refactor single-object distance calculation to derive distance from observer and target state vectors.
-- [ ] 2.4 Refactor multi-object distance calculation and sorting to use the same state-derived distance path.
-- [ ] 2.5 Add server query tests covering observer state distance math, current demo distance compatibility, and incompatible-frame error behavior.
+- [x] 2.1 Refactor the server observer model so it resolves to a `StateVector` at a requested `GameTime`.
+- [x] 2.2 Add frame compatibility checks for observer-target distance calculations.
+- [x] 2.3 Refactor single-object distance calculation to derive distance from observer and target state vectors.
+- [x] 2.4 Refactor multi-object distance calculation and sorting to use the same state-derived distance path.
+- [x] 2.5 Add server query tests covering observer state distance math, current demo distance compatibility, and incompatible-frame error behavior.
 
 ## 3. Location Summary
 
-- [ ] 3.1 Add a query-service method that builds a location summary for the observer at a requested `GameTime`.
-- [ ] 3.2 Calculate the nearest known object by resolving known object states and comparing Euclidean distance to the observer state.
+- [x] 3.1 Add a query-service method that builds a location summary for the observer at a requested `GameTime`.
+- [x] 3.2 Calculate the nearest known object by resolving known object states and comparing Euclidean distance to the observer state.
 - [ ] 3.3 Ensure the location summary uses the current simulation clock when no explicit timestamp is supplied.
-- [ ] 3.4 Add query-service tests for nearest-object selection, frame/time fields, quality propagation, and no raw coordinate output.
+- [x] 3.4 Add query-service tests for nearest-object selection, frame/time fields, quality propagation, and no raw coordinate output.
 
 ## 4. Server Commands
 
