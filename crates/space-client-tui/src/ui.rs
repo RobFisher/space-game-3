@@ -39,17 +39,19 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
         main[0],
     );
 
-    let status = vec![
+    let now = Instant::now();
+    let mut status_lines = vec![
         format!("Connected: {}", if app.connected { "yes" } else { "no" }),
         format!("Server: {}", app.status.server),
-        format!("Game time: {}", app.display_game_time()),
+        format!("Game time: {}", app.display_game_time_at(now)),
         format!("Ship: {}", app.status.ship_name),
         format!("Motion: {}", app.status.ship_motion),
         format!("Frame: {}", app.status.ship_frame),
         format!("Objects: {}", app.status.object_count),
         format!("Last update: {}", app.status.last_update),
-    ]
-    .join("\n");
+    ];
+    status_lines.extend(app.active_flight_status_lines(now));
+    let status = status_lines.join("\n");
     frame.render_widget(
         Paragraph::new(status)
             .block(Block::default().title("Status").borders(Borders::ALL))
@@ -234,5 +236,44 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(visible, vec!["-char", "lie", "delta"]);
+    }
+
+    #[test]
+    fn status_pane_renders_active_flight_eta() {
+        let mut app = ClientApp::default();
+        app.apply_server_message(space_game_protocol::ServerToClient::SimulationTime {
+            seq: Some(1),
+            state: space_game_protocol::SimulationTimeDto {
+                current_time: "2097-01-01T00:00:00Z".to_string(),
+                running: false,
+                rate: 1.0,
+            },
+        });
+        app.apply_server_message(space_game_protocol::ServerToClient::FlightPlan {
+            seq: 2,
+            plan: Some(space_game_protocol::FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: space_game_protocol::FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T00:05:00Z".to_string(),
+                duration_seconds: 300.0,
+                acceleration_km_s2: 0.02,
+                status: space_game_protocol::FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        });
+
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let rendered = format!("{:?}", terminal.backend().buffer());
+
+        assert!(rendered.contains("Flight: Mars"));
+        assert!(rendered.contains("ETA: 2097-01-01T00:05:00Z"));
+        assert!(rendered.contains("Countdown: 00:05:00"));
     }
 }

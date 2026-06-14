@@ -25,6 +25,7 @@ pub struct ClientApp {
     pub command_input: CommandInputController,
     pub next_seq: u64,
     pub should_quit: bool,
+    active_flight_plan: Option<FlightPlanDto>,
     history_store: CommandHistoryStore,
     clock_sample: Option<ClientClockSample>,
 }
@@ -75,6 +76,7 @@ impl ClientApp {
             command_input: CommandInputController::default(),
             next_seq: 1,
             should_quit: false,
+            active_flight_plan: None,
             history_store: CommandHistoryStore::disabled(),
             clock_sample: None,
         }
@@ -226,6 +228,9 @@ impl ClientApp {
             }
             ServerToClient::ShipState { ship, .. } => self.display_ship_state(ship),
             ServerToClient::FlightPlan { plan, .. } => {
+                self.active_flight_plan = plan
+                    .clone()
+                    .filter(|plan| plan.status == FlightPlanStatusDto::Active);
                 self.push_output(format_flight_plan(plan.as_ref()));
             }
             ServerToClient::LocationSummary { summary, .. } => self.display_location(summary),
@@ -307,6 +312,24 @@ impl ClientApp {
         projected.to_rfc3339_opts(SecondsFormat::Secs, true)
     }
 
+    pub fn active_flight_status_lines(&self, now: Instant) -> Vec<String> {
+        let Some(plan) = &self.active_flight_plan else {
+            return Vec::new();
+        };
+        let FlightPlanTargetDto::Object {
+            object_id,
+            display_name,
+        } = &plan.target;
+        vec![
+            format!("Flight: {display_name} ({object_id})"),
+            format!("ETA: {}", plan.arrival_time),
+            format!(
+                "Countdown: {}",
+                format_countdown(&self.display_game_time_at(now), &plan.arrival_time)
+            ),
+        ]
+    }
+
     fn display_objects(&mut self, objects: Vec<ObjectSummaryDto>) {
         let names = objects
             .into_iter()
@@ -382,6 +405,31 @@ fn flight_status_label(status: FlightPlanStatusDto) -> &'static str {
         FlightPlanStatusDto::Active => "active",
         FlightPlanStatusDto::Completed => "completed",
         FlightPlanStatusDto::Cancelled => "cancelled",
+    }
+}
+
+fn format_countdown(current_time: &str, arrival_time: &str) -> String {
+    let Ok(current) = DateTime::parse_from_rfc3339(current_time) else {
+        return "-".to_string();
+    };
+    let Ok(arrival) = DateTime::parse_from_rfc3339(arrival_time) else {
+        return "-".to_string();
+    };
+    let seconds = arrival
+        .with_timezone(&Utc)
+        .signed_duration_since(current.with_timezone(&Utc))
+        .num_seconds();
+    if seconds <= 0 {
+        return "arrived".to_string();
+    }
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+    if days > 0 {
+        format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     }
 }
 
@@ -731,5 +779,47 @@ mod tests {
             .output_lines
             .iter()
             .any(|line| line == "No active flight plan."));
+    }
+
+    #[test]
+    fn active_flight_status_lines_include_eta_and_countdown() {
+        let mut app = ClientApp::default();
+        let received_at = Instant::now();
+        app.clock_sample = Some(ClientClockSample {
+            current_time: "2097-01-01T00:00:00Z".to_string(),
+            received_at,
+            running: true,
+            rate: 1.0,
+        });
+
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 1,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T01:02:03Z".to_string(),
+                duration_seconds: 3_723.0,
+                acceleration_km_s2: 0.02,
+                status: FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        });
+
+        assert_eq!(
+            app.active_flight_status_lines(received_at),
+            vec![
+                "Flight: Mars (mars)".to_string(),
+                "ETA: 2097-01-01T01:02:03Z".to_string(),
+                "Countdown: 01:02:03".to_string(),
+            ]
+        );
+
+        app.apply_server_message(ServerToClient::FlightPlan { seq: 2, plan: None });
+        assert!(app.active_flight_status_lines(received_at).is_empty());
     }
 }
