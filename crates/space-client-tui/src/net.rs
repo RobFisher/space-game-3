@@ -8,7 +8,7 @@ use tokio::time;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::{
-    app::{ClientApp, SILENT_TIME_SYNC_SEQ},
+    app::{ClientApp, SILENT_FLIGHT_STATUS_SEQ, SILENT_TIME_SYNC_SEQ},
     terminal::TerminalGuard,
     ui,
 };
@@ -26,6 +26,11 @@ pub async fn run_client(mut app: ClientApp, terminal: &mut TerminalGuard) -> Res
                 client_name: "space-client-tui".to_string(),
                 client_version: env!("CARGO_PKG_VERSION").to_string(),
             },
+        )?))
+        .await?;
+    writer
+        .send(Message::Text(serde_json::to_string(
+            &startup_flight_status_message(),
         )?))
         .await?;
 
@@ -77,6 +82,13 @@ pub async fn run_client(mut app: ClientApp, terminal: &mut TerminalGuard) -> Res
     }
 
     Ok(())
+}
+
+fn startup_flight_status_message() -> ClientToServer {
+    ClientToServer::Command {
+        seq: SILENT_FLIGHT_STATUS_SEQ,
+        text: "flight status".to_string(),
+    }
 }
 
 pub fn handle_terminal_event(app: &mut ClientApp, event: Event) -> Option<ClientToServer> {
@@ -176,5 +188,16 @@ mod tests {
 
         assert_eq!(message, None);
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn startup_flight_status_message_uses_silent_sequence() {
+        assert_eq!(
+            startup_flight_status_message(),
+            ClientToServer::Command {
+                seq: SILENT_FLIGHT_STATUS_SEQ,
+                text: "flight status".to_string()
+            }
+        );
     }
 }

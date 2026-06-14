@@ -275,5 +275,6 @@ mod tests {
         assert!(rendered.contains("Flight: Mars"));
         assert!(rendered.contains("ETA: 2097-01-01T00:05:00Z"));
         assert!(rendered.contains("Countdown: 00:05:00"));
+        assert!(rendered.contains("Distance: 450 km"));
     }
 }

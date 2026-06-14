@@ -25,8 +25,8 @@
 - [x] 4.2 Display flight plan responses in plain text mode.
 - [x] 4.3 Add TUI/plain formatting tests for active, cancelled, and no-active-plan responses.
 - [x] 4.4 Display active flight target, ETA, and countdown in the interactive status pane.
-- [ ] 4.5 Display estimated remaining destination distance in the interactive status pane.
-- [ ] 4.6 Request active flight status silently when the interactive TUI starts.
+- [x] 4.5 Display estimated remaining destination distance in the interactive status pane.
+- [x] 4.6 Request active flight status silently when the interactive TUI starts.
 
 ## 5. Documentation and Validation
 

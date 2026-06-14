@@ -14,6 +14,8 @@ use crate::{
 
 pub const DEFAULT_SERVER_URL: &str = "ws://127.0.0.1:4000/ws";
 pub const SILENT_TIME_SYNC_SEQ: u64 = 0;
+pub const SILENT_FLIGHT_STATUS_SEQ: u64 = u64::MAX;
+const AU_KM: f64 = 149_597_870.7;
 const MAX_OUTPUT_LINES: usize = 500;
 
 #[derive(Debug, Clone)]
@@ -227,11 +229,13 @@ impl ClientApp {
                 }
             }
             ServerToClient::ShipState { ship, .. } => self.display_ship_state(ship),
-            ServerToClient::FlightPlan { plan, .. } => {
+            ServerToClient::FlightPlan { seq, plan } => {
                 self.active_flight_plan = plan
                     .clone()
                     .filter(|plan| plan.status == FlightPlanStatusDto::Active);
-                self.push_output(format_flight_plan(plan.as_ref()));
+                if seq != SILENT_FLIGHT_STATUS_SEQ {
+                    self.push_output(format_flight_plan(plan.as_ref()));
+                }
             }
             ServerToClient::LocationSummary { summary, .. } => self.display_location(summary),
             ServerToClient::SimulationTime { seq, state } => {
@@ -326,6 +330,10 @@ impl ClientApp {
             format!(
                 "Countdown: {}",
                 format_countdown(&self.display_game_time_at(now), &plan.arrival_time)
+            ),
+            format!(
+                "Distance: {}",
+                format_remaining_distance(&self.display_game_time_at(now), plan)
             ),
         ]
     }
@@ -430,6 +438,43 @@ fn format_countdown(current_time: &str, arrival_time: &str) -> String {
         format!("{days}d {hours:02}:{minutes:02}:{seconds:02}")
     } else {
         format!("{hours:02}:{minutes:02}:{seconds:02}")
+    }
+}
+
+fn format_remaining_distance(current_time: &str, plan: &FlightPlanDto) -> String {
+    let Some(distance_km) = remaining_distance_km(current_time, plan) else {
+        return "-".to_string();
+    };
+    if distance_km >= 0.01 * AU_KM {
+        format!("{:.3} AU / {:.0} km", distance_km / AU_KM, distance_km)
+    } else {
+        format!("{distance_km:.0} km")
+    }
+}
+
+fn remaining_distance_km(current_time: &str, plan: &FlightPlanDto) -> Option<f64> {
+    if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
+        return Some(0.0);
+    }
+    let current = DateTime::parse_from_rfc3339(current_time)
+        .ok()?
+        .with_timezone(&Utc);
+    let departure = DateTime::parse_from_rfc3339(&plan.departure_time)
+        .ok()?
+        .with_timezone(&Utc);
+    let elapsed_seconds =
+        current.signed_duration_since(departure).num_milliseconds() as f64 / 1_000.0;
+    let normalized = (elapsed_seconds / plan.duration_seconds).clamp(0.0, 1.0);
+    let total_distance_km =
+        plan.acceleration_km_s2 * (plan.duration_seconds / 2.0) * (plan.duration_seconds / 2.0);
+    Some(total_distance_km * (1.0 - ease_in_out_accel_decel(normalized)))
+}
+
+fn ease_in_out_accel_decel(normalized: f64) -> f64 {
+    if normalized < 0.5 {
+        2.0 * normalized * normalized
+    } else {
+        1.0 - 2.0 * (1.0 - normalized) * (1.0 - normalized)
     }
 }
 
@@ -816,10 +861,71 @@ mod tests {
                 "Flight: Mars (mars)".to_string(),
                 "ETA: 2097-01-01T01:02:03Z".to_string(),
                 "Countdown: 01:02:03".to_string(),
+                "Distance: 69304 km".to_string(),
             ]
         );
 
         app.apply_server_message(ServerToClient::FlightPlan { seq: 2, plan: None });
         assert!(app.active_flight_status_lines(received_at).is_empty());
+    }
+
+    #[test]
+    fn active_flight_status_lines_include_remaining_distance() {
+        let mut app = ClientApp::default();
+        let received_at = Instant::now();
+        app.clock_sample = Some(ClientClockSample {
+            current_time: "2097-01-01T00:00:05Z".to_string(),
+            received_at,
+            running: false,
+            rate: 1.0,
+        });
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 1,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T00:00:20Z".to_string(),
+                duration_seconds: 20.0,
+                acceleration_km_s2: 2.0,
+                status: FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        });
+
+        assert!(app
+            .active_flight_status_lines(received_at)
+            .contains(&"Distance: 175 km".to_string()));
+    }
+
+    #[test]
+    fn silent_flight_status_updates_without_output() {
+        let mut app = ClientApp::default();
+        let line_count = app.output_lines.len();
+
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: SILENT_FLIGHT_STATUS_SEQ,
+            plan: Some(FlightPlanDto {
+                plan_id: "flight-1".to_string(),
+                ship_id: "player-ship".to_string(),
+                target: FlightPlanTargetDto::Object {
+                    object_id: "mars".to_string(),
+                    display_name: "Mars".to_string(),
+                },
+                departure_time: "2097-01-01T00:00:00Z".to_string(),
+                arrival_time: "2097-01-01T00:00:20Z".to_string(),
+                duration_seconds: 20.0,
+                acceleration_km_s2: 2.0,
+                status: FlightPlanStatusDto::Active,
+                quality: Some("fictional".to_string()),
+            }),
+        });
+
+        assert_eq!(app.output_lines.len(), line_count);
+        assert!(!app.active_flight_status_lines(Instant::now()).is_empty());
     }
 }
