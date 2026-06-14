@@ -27,6 +27,7 @@ distances --at 2097-01-02T00:00:00Z
 status
 time
 advance 10 minutes
+where
 quit
 ```
 

@@ -34,6 +34,6 @@
 
 ## 6. Documentation And Validation
 
-- [ ] 6.1 Update README command examples or help text documentation to mention `where`.
+- [x] 6.1 Update README command examples or help text documentation to mention `where`.
 - [ ] 6.2 Run relevant Rust tests for protocol, server, and TUI client changes.
 - [ ] 6.3 Run `openspec validate --all`.
