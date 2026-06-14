@@ -19,6 +19,7 @@ const SERVER_COMMANDS: &[&str] = &[
     "distances",
     "help",
     "objects",
+    "ship",
     "status",
     "time",
     "where",
@@ -42,6 +43,10 @@ pub enum CommandError {
     UnsupportedTimeUnit(String),
     #[error("missing timestamp")]
     MissingTimestamp,
+    #[error("missing ship name")]
+    MissingShipName,
+    #[error(transparent)]
+    InvalidShipName(#[from] crate::ship::ShipNameError),
     #[error("unknown command: {0}")]
     UnknownCommand(String),
     #[error(transparent)]
@@ -61,6 +66,8 @@ impl CommandError {
             | Self::InvalidTimeAdvanceAmount(_)
             | Self::UnsupportedTimeUnit(_)
             | Self::MissingTimestamp
+            | Self::MissingShipName
+            | Self::InvalidShipName(_)
             | Self::UnknownCommand(_)
             | Self::Time(_) => ErrorDto {
                 code: match self {
@@ -71,6 +78,8 @@ impl CommandError {
                     Self::InvalidTimeAdvanceAmount(_) => "invalid_time_advance_amount",
                     Self::UnsupportedTimeUnit(_) => "unsupported_time_unit",
                     Self::MissingTimestamp => "missing_timestamp",
+                    Self::MissingShipName => "missing_ship_name",
+                    Self::InvalidShipName(_) => "invalid_ship_name",
                     Self::UnknownCommand(_) => "unknown_command",
                     Self::Time(_) => "invalid_game_time",
                     Self::Query(_) => unreachable!("handled above"),
@@ -88,7 +97,13 @@ pub fn handle_client_message(
     message: ClientToServer,
 ) -> Vec<ServerToClient> {
     match message {
-        ClientToServer::Hello { .. } => vec![status_message(service, clock, None)],
+        ClientToServer::Hello { .. } => match status_message(service, clock, None) {
+            Ok(message) => vec![message],
+            Err(err) => vec![ServerToClient::Error {
+                seq: None,
+                error: err.to_error_dto(),
+            }],
+        },
         ClientToServer::Command { seq, text } => handle_command_message(service, clock, seq, &text),
         ClientToServer::CompletionRequest(request) => {
             vec![handle_completion_request(service, request)]
@@ -126,7 +141,9 @@ pub fn handle_client_message(
         ClientToServer::AdvanceSimulationTime { seq, amount, unit } => {
             vec![advance_time_message(clock, seq, amount, unit)]
         }
-        ClientToServer::RequestStatus { seq } => vec![status_message(service, clock, Some(seq))],
+        ClientToServer::RequestStatus { seq } => {
+            response_or_error(seq, || status_message(service, clock, Some(seq)))
+        }
         ClientToServer::Ping { seq } => vec![ServerToClient::Pong { seq }],
     }
 }
@@ -395,7 +412,7 @@ fn handle_command(
     match command.as_str() {
         "help" => Ok(vec![ServerToClient::OutputLine {
             seq: Some(seq),
-            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
+            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, ship [status|name <name>], time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
         }]),
         "objects" => Ok(vec![ServerToClient::Objects {
             seq,
@@ -415,7 +432,8 @@ fn handle_command(
                 results: service.distances(effective_time(clock, at_game_time)?, sort, limit)?,
             }])
         }
-        "status" => Ok(vec![status_message(service, clock, Some(seq))]),
+        "status" => Ok(vec![status_message(service, clock, Some(seq))?]),
+        "ship" => handle_ship_command(service, clock, seq, &words[1..]),
         "time" => Ok(vec![simulation_time_message(clock, Some(seq))]),
         "where" => {
             if words.len() == 1 {
@@ -459,6 +477,29 @@ fn parse_distance_args(words: &[&str]) -> Result<(String, Option<String>), Comma
         .then(|| query_words.join(" "))
         .ok_or(CommandError::MissingObjectQuery)?;
     Ok((query, at_game_time))
+}
+
+fn handle_ship_command(
+    service: &SolarSystemQueryService,
+    clock: &SharedSimulationClock,
+    seq: u64,
+    words: &[&str],
+) -> Result<Vec<ServerToClient>, CommandError> {
+    match words.first().map(|word| word.to_ascii_lowercase()) {
+        None => Ok(vec![ship_state_message(service, clock, seq)?]),
+        Some(command) if command == "status" && words.len() == 1 => {
+            Ok(vec![ship_state_message(service, clock, seq)?])
+        }
+        Some(command) if command == "name" => {
+            let name_words = words
+                .get(1..)
+                .filter(|words| !words.is_empty())
+                .ok_or(CommandError::MissingShipName)?;
+            service.rename_player_ship(&name_words.join(" "))?;
+            Ok(vec![ship_state_message(service, clock, seq)?])
+        }
+        Some(command) => Err(CommandError::UnknownCommand(format!("ship {command}"))),
+    }
 }
 
 fn parse_distances_args(
@@ -538,10 +579,21 @@ fn status_message(
     service: &SolarSystemQueryService,
     clock: &SharedSimulationClock,
     seq: Option<u64>,
-) -> ServerToClient {
+) -> Result<ServerToClient, CommandError> {
     let at = clock_snapshot(clock).current_time;
-    let (seq, status) = service.status(seq, &at);
-    ServerToClient::Status { seq, status }
+    let (seq, status) = service.status(seq, &at)?;
+    Ok(ServerToClient::Status { seq, status })
+}
+
+fn ship_state_message(
+    service: &SolarSystemQueryService,
+    clock: &SharedSimulationClock,
+    seq: u64,
+) -> Result<ServerToClient, CommandError> {
+    Ok(ServerToClient::ShipState {
+        seq,
+        ship: service.ship_state(clock_snapshot(clock).current_time)?,
+    })
 }
 
 fn simulation_time_message(clock: &SharedSimulationClock, seq: Option<u64>) -> ServerToClient {
@@ -605,10 +657,7 @@ mod tests {
     use space_game_protocol::{CompletionCandidateKindDto, CompletionRequestDto, DistanceSort};
 
     use super::*;
-    use crate::{
-        config::{ServerConfig, DEFAULT_GAME_TIME},
-        query::AU_KM,
-    };
+    use crate::config::{ServerConfig, DEFAULT_GAME_TIME};
 
     fn service() -> SolarSystemQueryService {
         ServerConfig::default().query_service().unwrap()
@@ -715,8 +764,68 @@ mod tests {
             ServerToClient::Status {
                 seq: Some(10),
                 status
-            } if status.observer_label == "demo-observer"
+            } if status.ship_id == "player-ship"
+                && status.ship_name == "Wayfarer"
+                && status.ship_motion == "orbiting"
         ));
+    }
+
+    #[test]
+    fn handles_ship_command_with_sequence() {
+        let responses = handle_command_message(&service(), &clock(), 30, "ship");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::ShipState { seq: 30, ship }
+                if ship.ship_id == "player-ship"
+                    && ship.ship_name == "Wayfarer"
+                    && ship.motion_mode == "orbiting"
+                    && ship.frame == "solar_system_barycentric_j2000"
+        ));
+    }
+
+    #[test]
+    fn handles_ship_status_command_with_sequence() {
+        let responses = handle_command_message(&service(), &clock(), 31, "ship status");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::ShipState { seq: 31, ship }
+                if ship.ship_name == "Wayfarer"
+        ));
+    }
+
+    #[test]
+    fn handles_ship_name_command_and_status_uses_new_name() {
+        let service = service();
+        let responses = handle_command_message(&service, &clock(), 32, "ship name Wayfarer II");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::ShipState { seq: 32, ship }
+                if ship.ship_id == "player-ship" && ship.ship_name == "Wayfarer II"
+        ));
+
+        let responses = handle_command_message(&service, &clock(), 33, "status");
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Status { status, .. } if status.ship_name == "Wayfarer II"
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_ship_name_command() {
+        let service = service();
+        let responses = handle_command_message(&service, &clock(), 34, "ship name");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Error {
+                seq: Some(34),
+                error
+            } if error.code == "missing_ship_name"
+        ));
+        assert_eq!(service.player_ship().display_name(), "Wayfarer");
     }
 
     #[test]
@@ -739,8 +848,9 @@ mod tests {
         assert!(matches!(
             &responses[1],
             ServerToClient::LocationSummary { seq: 12, summary }
-                if summary.subject_label == "demo-observer"
-                    && summary.subject_type == "observer"
+                if summary.subject_id.as_deref() == Some("player-ship")
+                    && summary.subject_label == "Wayfarer"
+                    && summary.subject_type == "ship"
                     && summary.frame == "solar_system_barycentric_j2000"
                     && !summary.nearest_object_id.is_empty()
         ));
@@ -894,6 +1004,30 @@ mod tests {
                         .collect::<Vec<_>>(),
                     vec!["where"]
                 );
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_ship_command_name() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 29,
+                input: "sh".to_string(),
+                cursor: 2,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 0);
+                assert_eq!(response.replacement.end, 2);
+                assert!(response.candidates.iter().any(|candidate| {
+                    candidate.insertion == "ship"
+                        && candidate.kind == CompletionCandidateKindDto::Command
+                }));
             }
             other => panic!("unexpected response: {other:?}"),
         }
@@ -1122,11 +1256,14 @@ mod tests {
     }
 
     #[test]
-    fn observer_is_one_au_from_origin() {
+    fn distance_to_sun_uses_player_ship_origin() {
         let responses = handle_command_message(&service(), &clock(), 12, "distance sun");
 
         match &responses[1] {
-            ServerToClient::Distance { result, .. } => assert_eq!(result.distance_km, AU_KM),
+            ServerToClient::Distance { result, .. } => {
+                assert_eq!(result.object_id, "sun");
+                assert!(result.distance_km.is_finite());
+            }
             other => panic!("unexpected response: {other:?}"),
         }
     }

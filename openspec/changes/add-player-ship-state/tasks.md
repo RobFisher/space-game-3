@@ -13,11 +13,11 @@
 
 ## 3. Server Query and Commands
 
-- [ ] 3.1 Replace fixed observer query state with player ship state in the server query service.
-- [ ] 3.2 Update `status`, `where`, `distance`, and `distances` behavior to resolve from the player ship at the effective simulation time.
-- [ ] 3.3 Add `ship`, `ship status`, and `ship name <name>` command handling.
-- [ ] 3.4 Update command completion and help text for the new `ship` command.
-- [ ] 3.5 Update server unit and WebSocket tests for ship-centered status, location, distance, naming, and invalid-name errors.
+- [x] 3.1 Replace fixed observer query state with player ship state in the server query service.
+- [x] 3.2 Update `status`, `where`, `distance`, and `distances` behavior to resolve from the player ship at the effective simulation time.
+- [x] 3.3 Add `ship`, `ship status`, and `ship name <name>` command handling.
+- [x] 3.4 Update command completion and help text for the new `ship` command.
+- [x] 3.5 Update server unit and WebSocket tests for ship-centered status, location, distance, naming, and invalid-name errors.
 
 ## 4. TUI and Plain Client
 

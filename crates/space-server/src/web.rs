@@ -74,7 +74,17 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         .expect("simulation clock lock poisoned")
         .snapshot(Instant::now())
         .current_time;
-    let (_, status) = state.service.status(None, &at);
+    let (_, status) = match state.service.status(None, &at) {
+        Ok(status) => status,
+        Err(err) => {
+            let response = ServerToClient::Error {
+                seq: None,
+                error: err.to_error_dto(),
+            };
+            let _ = send_protocol(&mut sender, &response).await;
+            return;
+        }
+    };
     if send_protocol(&mut sender, &ServerToClient::Status { seq: None, status })
         .await
         .is_err()
@@ -258,8 +268,9 @@ mod tests {
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::LocationSummary { seq: 5, summary }
-                if summary.subject_label == "demo-observer"
-                    && summary.subject_type == "observer"
+                if summary.subject_id.as_deref() == Some("player-ship")
+                    && summary.subject_label == "Wayfarer"
+                    && summary.subject_type == "ship"
         ));
 
         send_protocol(

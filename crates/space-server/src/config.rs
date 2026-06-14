@@ -1,11 +1,8 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use space_game_ephemeris::{
-    EphemerisQuality, FrameId, ObjectRegistry, SolarSystem, SolarSystemBuilder, Vec3Km,
-    Vec3KmPerSec,
-};
+use space_game_ephemeris::{ObjectRegistry, SolarSystem, SolarSystemBuilder};
 
-use crate::query::{ObserverLocation, SolarSystemQueryService};
+use crate::query::SolarSystemQueryService;
 
 pub const DEFAULT_WS_PATH: &str = "/ws";
 pub const DEFAULT_SERVER_LABEL: &str = "127.0.0.1:4000";
@@ -42,13 +39,6 @@ impl ServerConfig {
         Ok(SolarSystemQueryService::new(
             self.server_label.clone(),
             world,
-            ObserverLocation {
-                label: "demo-observer".to_string(),
-                frame: FrameId::SolarSystemBarycentricJ2000,
-                position_km: Vec3Km::new(149_597_870.7, 0.0, 0.0),
-                velocity_km_s: Vec3KmPerSec::ZERO,
-                quality: EphemerisQuality::Fictional,
-            },
         ))
     }
 }

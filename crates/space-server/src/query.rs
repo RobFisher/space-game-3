@@ -2,10 +2,11 @@ use std::sync::RwLock;
 
 use space_game_ephemeris::{
     EphemerisError, EphemerisQuality, FrameId, GameTime, ObjectKind, ObjectSummary, SolarSystem,
-    StateVector, Vec3Km, Vec3KmPerSec,
+    StateVector,
 };
 use space_game_protocol::{
-    DistanceResultDto, DistanceSort, ErrorDto, LocationSummaryDto, ObjectSummaryDto, StatusDto,
+    DistanceResultDto, DistanceSort, ErrorDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto,
+    StatusDto,
 };
 use thiserror::Error;
 
@@ -13,32 +14,10 @@ use crate::ship::{PlayerShip, ResolvedShipState, ShipNameError};
 
 pub const AU_KM: f64 = 149_597_870.7;
 
-#[derive(Clone, Debug)]
-pub struct ObserverLocation {
-    pub label: String,
-    pub frame: FrameId,
-    pub position_km: Vec3Km,
-    pub velocity_km_s: Vec3KmPerSec,
-    pub quality: EphemerisQuality,
-}
-
-impl ObserverLocation {
-    pub fn state_at(&self, at: GameTime) -> StateVector {
-        StateVector::new(
-            self.position_km,
-            self.velocity_km_s,
-            self.frame.clone(),
-            at,
-            self.quality,
-        )
-    }
-}
-
 #[derive(Debug)]
 pub struct SolarSystemQueryService {
     server_label: String,
     world: SolarSystem,
-    observer: ObserverLocation,
     player_ship: RwLock<PlayerShip>,
 }
 
@@ -48,9 +27,11 @@ pub enum QueryError {
     UnknownObject(String),
     #[error("object query '{query}' is ambiguous: {matches}")]
     AmbiguousObject { query: String, matches: String },
-    #[error("cannot compare observer frame '{observer_frame}' with object '{object}' frame '{object_frame}'")]
+    #[error(
+        "cannot compare ship frame '{ship_frame}' with object '{object}' frame '{object_frame}'"
+    )]
     IncompatibleFrame {
-        observer_frame: String,
+        ship_frame: String,
         object: String,
         object_frame: String,
     },
@@ -74,24 +55,22 @@ impl QueryError {
 }
 
 impl SolarSystemQueryService {
-    pub fn new(server_label: String, world: SolarSystem, observer: ObserverLocation) -> Self {
+    pub fn new(server_label: String, world: SolarSystem) -> Self {
         let player_ship = PlayerShip::default_near_earth(
             GameTime::from_utc_iso8601(crate::config::DEFAULT_GAME_TIME)
                 .expect("default game time is valid"),
         );
-        Self::with_player_ship(server_label, world, observer, player_ship)
+        Self::with_player_ship(server_label, world, player_ship)
     }
 
     pub fn with_player_ship(
         server_label: String,
         world: SolarSystem,
-        observer: ObserverLocation,
         player_ship: PlayerShip,
     ) -> Self {
         Self {
             server_label,
             world,
-            observer,
             player_ship: RwLock::new(player_ship),
         }
     }
@@ -163,18 +142,30 @@ impl SolarSystemQueryService {
         }
     }
 
-    pub fn status(&self, seq: Option<u64>, at: &GameTime) -> (Option<u64>, StatusDto) {
-        (
+    pub fn status(
+        &self,
+        seq: Option<u64>,
+        at: &GameTime,
+    ) -> Result<(Option<u64>, StatusDto), QueryError> {
+        let ship = self.player_ship_state(at.clone())?;
+        Ok((
             seq,
             StatusDto {
                 connected: true,
                 server: self.server_label.clone(),
                 game_time: at.to_string(),
-                observer_label: self.observer.label.clone(),
-                observer_frame: frame_label(&self.observer.state_at(at.clone()).frame),
+                ship_id: ship.ship_id,
+                ship_name: ship.display_name,
+                ship_frame: frame_label(&ship.state.frame),
+                ship_motion: ship.motion_mode,
                 object_count: self.world.list_objects().len(),
             },
-        )
+        ))
+    }
+
+    pub fn ship_state(&self, at: GameTime) -> Result<ShipStateDto, QueryError> {
+        let ship = self.player_ship_state(at)?;
+        Ok(ship_state_to_dto(ship))
     }
 
     pub fn distance_to(
@@ -220,10 +211,10 @@ impl SolarSystemQueryService {
         object: &ObjectSummary,
         at: GameTime,
     ) -> Result<DistanceResultDto, QueryError> {
-        let observer_state = self.observer.state_at(at.clone());
+        let ship_state = self.player_ship_state(at.clone())?;
         let target_state = self.world.state(object.id.as_str(), at.clone())?;
         let (distance_km, quality) =
-            self.distance_between_states(object, &observer_state, &target_state)?;
+            self.distance_between_states(object, &ship_state.state, &target_state)?;
         Ok(DistanceResultDto {
             object_id: object.id.to_string(),
             display_name: object.name.clone(),
@@ -235,12 +226,12 @@ impl SolarSystemQueryService {
     }
 
     pub fn location_summary(&self, at: GameTime) -> Result<LocationSummaryDto, QueryError> {
-        let observer_state = self.observer.state_at(at.clone());
+        let ship_state = self.player_ship_state(at.clone())?;
         self.location_summary_for_state(
-            None,
-            self.observer.label.clone(),
-            "observer".to_string(),
-            &observer_state,
+            Some(ship_state.ship_id),
+            ship_state.display_name,
+            "ship".to_string(),
+            &ship_state.state,
             at,
         )
     }
@@ -306,18 +297,18 @@ impl SolarSystemQueryService {
     fn distance_between_states(
         &self,
         object: &ObjectSummary,
-        observer_state: &StateVector,
+        ship_state: &StateVector,
         target_state: &StateVector,
     ) -> Result<(f64, EphemerisQuality), QueryError> {
-        if observer_state.frame != target_state.frame {
+        if ship_state.frame != target_state.frame {
             return Err(QueryError::IncompatibleFrame {
-                observer_frame: frame_label(&observer_state.frame),
+                ship_frame: frame_label(&ship_state.frame),
                 object: object.id.to_string(),
                 object_frame: frame_label(&target_state.frame),
             });
         }
 
-        let relative_state = target_state.relative_to(observer_state);
+        let relative_state = target_state.relative_to(ship_state);
         Ok((
             relative_state.position_km.magnitude(),
             relative_state.quality,
@@ -330,6 +321,17 @@ pub fn summary_to_dto(summary: ObjectSummary) -> ObjectSummaryDto {
         id: summary.id.to_string(),
         display_name: summary.name,
         kind: kind_label(&summary.kind),
+    }
+}
+
+fn ship_state_to_dto(ship: ResolvedShipState) -> ShipStateDto {
+    ShipStateDto {
+        ship_id: ship.ship_id,
+        ship_name: ship.display_name,
+        motion_mode: ship.motion_mode,
+        frame: frame_label(&ship.state.frame),
+        game_time: ship.state.epoch.to_string(),
+        quality: Some(quality_label(ship.state.quality)),
     }
 }
 
@@ -352,7 +354,7 @@ fn quality_label(quality: EphemerisQuality) -> String {
 
 #[cfg(test)]
 mod tests {
-    use space_game_ephemeris::{EphemerisQuality, FrameId, ObjectRegistry, SolarSystemBuilder};
+    use space_game_ephemeris::{FrameId, ObjectRegistry, SolarSystemBuilder};
 
     use super::*;
     use crate::config::{demo_world, DEFAULT_GAME_TIME};
@@ -362,27 +364,7 @@ mod tests {
     }
 
     fn service() -> SolarSystemQueryService {
-        SolarSystemQueryService::new(
-            "test-server".to_string(),
-            demo_world().unwrap(),
-            ObserverLocation {
-                label: "demo-observer".to_string(),
-                frame: FrameId::SolarSystemBarycentricJ2000,
-                position_km: Vec3Km::new(AU_KM, 0.0, 0.0),
-                velocity_km_s: Vec3KmPerSec::ZERO,
-                quality: EphemerisQuality::Fictional,
-            },
-        )
-    }
-
-    fn observer_at(position_km: Vec3Km, frame: FrameId) -> ObserverLocation {
-        ObserverLocation {
-            label: "test-observer".to_string(),
-            frame,
-            position_km,
-            velocity_km_s: Vec3KmPerSec::ZERO,
-            quality: EphemerisQuality::Fictional,
-        }
+        SolarSystemQueryService::new("test-server".to_string(), demo_world().unwrap())
     }
 
     #[test]
@@ -428,17 +410,7 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
             .object_registry_data(registry)
             .build()
             .unwrap();
-        let service = SolarSystemQueryService::new(
-            "test-server".to_string(),
-            world,
-            ObserverLocation {
-                label: "origin".to_string(),
-                frame: FrameId::SolarSystemBarycentricJ2000,
-                position_km: Vec3Km::ZERO,
-                velocity_km_s: Vec3KmPerSec::ZERO,
-                quality: EphemerisQuality::Fictional,
-            },
-        );
+        let service = SolarSystemQueryService::new("test-server".to_string(), world);
 
         assert!(matches!(
             service.resolve_object("alpha"),
@@ -456,40 +428,49 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
     }
 
     #[test]
-    fn keeps_demo_observer_distance_compatibility() {
+    fn calculates_distance_from_player_ship() {
         let result = service().distance_to("sun", epoch()).unwrap();
 
-        assert_eq!(result.distance_km, AU_KM);
-        assert_eq!(result.distance_au, 1.0);
+        assert!(result.distance_km.is_finite());
+        assert_ne!(result.distance_km, AU_KM);
     }
 
     #[test]
-    fn observer_resolves_to_state_at_requested_time() {
+    fn resolves_ship_state_at_requested_time() {
         let at = epoch();
-        let observer = observer_at(
-            Vec3Km::new(1.0, 2.0, 3.0),
-            FrameId::SolarSystemBarycentricJ2000,
-        );
-        let state = observer.state_at(at.clone());
+        let ship = service().player_ship_state(at.clone()).unwrap();
 
-        assert_eq!(state.position_km, Vec3Km::new(1.0, 2.0, 3.0));
-        assert_eq!(state.velocity_km_s, Vec3KmPerSec::ZERO);
-        assert_eq!(state.frame, FrameId::SolarSystemBarycentricJ2000);
-        assert_eq!(state.epoch, at);
-        assert_eq!(state.quality, EphemerisQuality::Fictional);
+        assert_eq!(ship.ship_id, "player-ship");
+        assert_eq!(ship.display_name, "Wayfarer");
+        assert_eq!(ship.motion_mode, "orbiting");
+        assert_eq!(
+            ship.parent_object_id.as_ref().map(|id| id.as_str()),
+            Some("earth")
+        );
+        assert_eq!(ship.state.frame, FrameId::SolarSystemBarycentricJ2000);
+        assert_eq!(ship.state.epoch, at);
     }
 
     #[test]
-    fn calculates_distance_from_observer_and_target_states() {
+    fn calculates_distance_from_ship_and_target_states() {
         let registry = ObjectRegistry::from_toml_str(
             r#"
+[[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+[objects.source]
+type = "static_state"
+position_km = { x = 0.0, y = 0.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+
 [[objects]]
 id = "target"
 name = "Target"
 kind = "station"
 [objects.source]
 type = "static_state"
-position_km = { x = 13.0, y = 24.0, z = 30.0 }
+position_km = { x = 42169.0, y = 0.0, z = 0.0 }
 velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
 "#,
         )
@@ -498,14 +479,7 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
             .object_registry_data(registry)
             .build()
             .unwrap();
-        let service = SolarSystemQueryService::new(
-            "test-server".to_string(),
-            world,
-            observer_at(
-                Vec3Km::new(10.0, 20.0, 30.0),
-                FrameId::SolarSystemBarycentricJ2000,
-            ),
-        );
+        let service = SolarSystemQueryService::new("test-server".to_string(), world);
 
         let result = service.distance_to("target", epoch()).unwrap();
         assert_eq!(result.distance_km, 5.0);
@@ -515,6 +489,15 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
     fn rejects_incompatible_distance_frames() {
         let registry = ObjectRegistry::from_toml_str(
             r#"
+[[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+[objects.source]
+type = "static_state"
+position_km = { x = 0.0, y = 0.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+
 [[objects]]
 id = "target"
 name = "Target"
@@ -531,19 +514,15 @@ frame = { type = "custom", value = "other" }
             .object_registry_data(registry)
             .build()
             .unwrap();
-        let service = SolarSystemQueryService::new(
-            "test-server".to_string(),
-            world,
-            observer_at(Vec3Km::ZERO, FrameId::SolarSystemBarycentricJ2000),
-        );
+        let service = SolarSystemQueryService::new("test-server".to_string(), world);
 
         assert!(matches!(
             service.distance_to("target", epoch()),
             Err(QueryError::IncompatibleFrame {
-                observer_frame,
+                ship_frame,
                 object,
                 object_frame
-            }) if observer_frame == "solar_system_barycentric_j2000"
+            }) if ship_frame == "solar_system_barycentric_j2000"
                 && object == "target"
                 && object_frame == "other"
         ));
@@ -570,10 +549,12 @@ frame = { type = "custom", value = "other" }
 
     #[test]
     fn reports_status() {
-        let (_, status) = service().status(Some(4), &epoch());
+        let (_, status) = service().status(Some(4), &epoch()).unwrap();
 
         assert_eq!(status.server, "test-server");
-        assert_eq!(status.observer_label, "demo-observer");
+        assert_eq!(status.ship_id, "player-ship");
+        assert_eq!(status.ship_name, "Wayfarer");
+        assert_eq!(status.ship_motion, "orbiting");
         assert_eq!(status.object_count, 8);
     }
 
@@ -582,12 +563,21 @@ frame = { type = "custom", value = "other" }
         let registry = ObjectRegistry::from_toml_str(
             r#"
 [[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+[objects.source]
+type = "static_state"
+position_km = { x = 0.0, y = 0.0, z = 0.0 }
+velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
+
+[[objects]]
 id = "near"
 name = "Near Station"
 kind = "station"
 [objects.source]
 type = "static_state"
-position_km = { x = 12.0, y = 0.0, z = 0.0 }
+position_km = { x = 42166.0, y = 0.0, z = 0.0 }
 velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
 
 [[objects]]
@@ -596,7 +586,7 @@ name = "Far Station"
 kind = "station"
 [objects.source]
 type = "static_state"
-position_km = { x = 50.0, y = 0.0, z = 0.0 }
+position_km = { x = 42214.0, y = 0.0, z = 0.0 }
 velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
 "#,
         )
@@ -605,20 +595,13 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
             .object_registry_data(registry)
             .build()
             .unwrap();
-        let service = SolarSystemQueryService::new(
-            "test-server".to_string(),
-            world,
-            observer_at(
-                Vec3Km::new(10.0, 0.0, 0.0),
-                FrameId::SolarSystemBarycentricJ2000,
-            ),
-        );
+        let service = SolarSystemQueryService::new("test-server".to_string(), world);
 
         let summary = service.location_summary(epoch()).unwrap();
 
-        assert_eq!(summary.subject_id, None);
-        assert_eq!(summary.subject_label, "test-observer");
-        assert_eq!(summary.subject_type, "observer");
+        assert_eq!(summary.subject_id.as_deref(), Some("player-ship"));
+        assert_eq!(summary.subject_label, "Wayfarer");
+        assert_eq!(summary.subject_type, "ship");
         assert_eq!(summary.frame, "solar_system_barycentric_j2000");
         assert_eq!(summary.game_time, DEFAULT_GAME_TIME);
         assert_eq!(summary.nearest_object_id, "near");
@@ -660,11 +643,7 @@ velocity_km_s = { x = 0.0, y = 0.0, z = 0.0 }
             .object_registry_data(registry)
             .build()
             .unwrap();
-        let service = SolarSystemQueryService::new(
-            "test-server".to_string(),
-            world,
-            observer_at(Vec3Km::ZERO, FrameId::SolarSystemBarycentricJ2000),
-        );
+        let service = SolarSystemQueryService::new("test-server".to_string(), world);
 
         let summary = service.object_location_summary("subject", epoch()).unwrap();
 
