@@ -1,8 +1,8 @@
 ## 1. Protocol Contract
 
-- [ ] 1.1 Add a location summary DTO with observer label, frame, game time, nearest object id/name, distance kilometers, distance astronomical units, and optional quality.
-- [ ] 1.2 Add a server-to-client location summary response variant with request sequence correlation.
-- [ ] 1.3 Add protocol serialization round-trip tests for location summary responses and verify the DTO has no raw coordinate fields.
+- [x] 1.1 Add a location summary DTO with observer label, frame, game time, nearest object id/name, distance kilometers, distance astronomical units, and optional quality.
+- [x] 1.2 Add a server-to-client location summary response variant with request sequence correlation.
+- [x] 1.3 Add protocol serialization round-trip tests for location summary responses and verify the DTO has no raw coordinate fields.
 
 ## 2. Server Spatial State Model
 

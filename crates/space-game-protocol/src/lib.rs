@@ -75,6 +75,10 @@ pub enum ServerToClient {
         seq: u64,
         results: Vec<DistanceResultDto>,
     },
+    LocationSummary {
+        seq: u64,
+        summary: LocationSummaryDto,
+    },
     SimulationTime {
         seq: Option<u64>,
         state: SimulationTimeDto,
@@ -128,6 +132,18 @@ pub struct DistanceResultDto {
     pub distance_km: f64,
     pub distance_au: f64,
     pub at_game_time: String,
+    pub quality: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocationSummaryDto {
+    pub observer_label: String,
+    pub frame: String,
+    pub game_time: String,
+    pub nearest_object_id: String,
+    pub nearest_object_name: String,
+    pub distance_km: f64,
+    pub distance_au: f64,
     pub quality: Option<String>,
 }
 
@@ -304,6 +320,50 @@ mod tests {
         };
 
         assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn location_summary_round_trips() {
+        let msg = ServerToClient::LocationSummary {
+            seq: 9,
+            summary: LocationSummaryDto {
+                observer_label: "demo-observer".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T00:00:00Z".to_string(),
+                nearest_object_id: "earth".to_string(),
+                nearest_object_name: "Earth".to_string(),
+                distance_km: 42_000.0,
+                distance_au: 0.000_280_753,
+                quality: Some("fictional".to_string()),
+            },
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn location_summary_omits_raw_coordinates() {
+        let msg = ServerToClient::LocationSummary {
+            seq: 9,
+            summary: LocationSummaryDto {
+                observer_label: "demo-observer".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T00:00:00Z".to_string(),
+                nearest_object_id: "earth".to_string(),
+                nearest_object_name: "Earth".to_string(),
+                distance_km: 42_000.0,
+                distance_au: 0.000_280_753,
+                quality: Some("fictional".to_string()),
+            },
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let summary = json.get("summary").unwrap();
+
+        assert!(summary.get("x").is_none());
+        assert!(summary.get("y").is_none());
+        assert!(summary.get("z").is_none());
+        assert!(summary.get("position_km").is_none());
+        assert!(summary.get("velocity_km_s").is_none());
     }
 
     #[test]
