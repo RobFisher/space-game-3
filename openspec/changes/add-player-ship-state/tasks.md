@@ -1,9 +1,9 @@
 ## 1. Ship State Model
 
-- [ ] 1.1 Add a server-side player ship model with stable id, display name, motion mode, frame, and quality metadata.
-- [ ] 1.2 Implement orbiting ship state resolution at a requested `GameTime` using an Earth-parented fictional circular orbit.
-- [ ] 1.3 Add runtime ship renaming with validation that rejects empty or whitespace-only names.
-- [ ] 1.4 Add focused unit tests for default ship creation, orbiting state resolution, time-varying position, and rename validation.
+- [x] 1.1 Add a server-side player ship model with stable id, display name, motion mode, frame, and quality metadata.
+- [x] 1.2 Implement orbiting ship state resolution at a requested `GameTime` using an Earth-parented fictional circular orbit.
+- [x] 1.3 Add runtime ship renaming with validation that rejects empty or whitespace-only names.
+- [x] 1.4 Add focused unit tests for default ship creation, orbiting state resolution, time-varying position, and rename validation.
 
 ## 2. Protocol
 

@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use space_game_ephemeris::{
     EphemerisError, EphemerisQuality, FrameId, GameTime, ObjectKind, ObjectSummary, SolarSystem,
     StateVector, Vec3Km, Vec3KmPerSec,
@@ -6,6 +8,8 @@ use space_game_protocol::{
     DistanceResultDto, DistanceSort, ErrorDto, LocationSummaryDto, ObjectSummaryDto, StatusDto,
 };
 use thiserror::Error;
+
+use crate::ship::{PlayerShip, ResolvedShipState, ShipNameError};
 
 pub const AU_KM: f64 = 149_597_870.7;
 
@@ -30,11 +34,12 @@ impl ObserverLocation {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SolarSystemQueryService {
     server_label: String,
     world: SolarSystem,
     observer: ObserverLocation,
+    player_ship: RwLock<PlayerShip>,
 }
 
 #[derive(Debug, Error)]
@@ -70,11 +75,48 @@ impl QueryError {
 
 impl SolarSystemQueryService {
     pub fn new(server_label: String, world: SolarSystem, observer: ObserverLocation) -> Self {
+        let player_ship = PlayerShip::default_near_earth(
+            GameTime::from_utc_iso8601(crate::config::DEFAULT_GAME_TIME)
+                .expect("default game time is valid"),
+        );
+        Self::with_player_ship(server_label, world, observer, player_ship)
+    }
+
+    pub fn with_player_ship(
+        server_label: String,
+        world: SolarSystem,
+        observer: ObserverLocation,
+        player_ship: PlayerShip,
+    ) -> Self {
         Self {
             server_label,
             world,
             observer,
+            player_ship: RwLock::new(player_ship),
         }
+    }
+
+    pub fn player_ship(&self) -> PlayerShip {
+        self.player_ship
+            .read()
+            .expect("player ship lock poisoned")
+            .clone()
+    }
+
+    pub fn rename_player_ship(&self, display_name: &str) -> Result<PlayerShip, ShipNameError> {
+        let mut ship = self.player_ship.write().expect("player ship lock poisoned");
+        ship.rename(display_name)?;
+        Ok(ship.clone())
+    }
+
+    pub fn player_ship_state(&self, at: GameTime) -> Result<ResolvedShipState, QueryError> {
+        let ship = self.player_ship();
+        let parent_id = ship
+            .orbit_parent_id()
+            .ok_or_else(|| QueryError::UnknownObject("ship parent".to_string()))?
+            .to_string();
+        let parent_state = self.world.state(&parent_id, at.clone())?;
+        Ok(ship.resolve_orbiting_state(at, parent_state))
     }
 
     pub fn list_objects(&self) -> Vec<ObjectSummaryDto> {
