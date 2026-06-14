@@ -46,8 +46,9 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
         format!("Connected: {}", if app.connected { "yes" } else { "no" }),
         format!("Server: {}", app.status.server),
         format!("Game time: {}", app.display_game_time()),
-        format!("Observer: {}", app.status.observer_label),
-        format!("Frame: {}", app.status.observer_frame),
+        format!("Ship: {}", app.status.ship_name),
+        format!("Motion: {}", app.status.ship_motion),
+        format!("Frame: {}", app.status.ship_frame),
         format!("Objects: {}", app.status.object_count),
         format!("Last update: {}", app.status.last_update),
     ]

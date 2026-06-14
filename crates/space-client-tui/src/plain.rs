@@ -2,7 +2,7 @@ use color_eyre::eyre::{eyre, Result};
 use futures::{stream::Stream, Sink, SinkExt, StreamExt};
 use space_game_protocol::{
     ClientToServer, DistanceResultDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
-    SimulationTimeDto, StatusDto,
+    ShipStateDto, SimulationTimeDto, StatusDto,
 };
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::{connect_async, tungstenite, tungstenite::Message};
@@ -67,6 +67,9 @@ pub fn plain_output_lines(message: &ServerToClient, expected_seq: u64) -> Vec<St
             let mut lines = vec!["Distances:".to_string()];
             lines.extend(results.iter().map(format_distance));
             lines
+        }
+        ServerToClient::ShipState { seq, ship } if *seq == expected_seq => {
+            vec![format_ship_state(ship)]
         }
         ServerToClient::LocationSummary { seq, summary } if *seq == expected_seq => {
             vec![format_location(summary)]
@@ -171,6 +174,7 @@ fn is_command_completion(message: &ServerToClient, expected_seq: u64) -> bool {
         ServerToClient::Objects { seq, .. }
         | ServerToClient::Distance { seq, .. }
         | ServerToClient::Distances { seq, .. }
+        | ServerToClient::ShipState { seq, .. }
         | ServerToClient::LocationSummary { seq, .. }
         | ServerToClient::Pong { seq } => *seq == expected_seq,
         ServerToClient::Status { seq: Some(seq), .. }
@@ -211,13 +215,21 @@ fn format_location(summary: &LocationSummaryDto) -> String {
 
 fn format_status(status: &StatusDto) -> String {
     format!(
-        "Status: connected={} server={} game_time={} observer={} frame={} objects={}",
+        "Status: connected={} server={} game_time={} ship={} motion={} frame={} objects={}",
         status.connected,
         status.server,
         status.game_time,
-        status.observer_label,
-        status.observer_frame,
+        status.ship_name,
+        status.ship_motion,
+        status.ship_frame,
         status.object_count
+    )
+}
+
+fn format_ship_state(ship: &ShipStateDto) -> String {
+    format!(
+        "Ship: {} motion={} frame={} game_time={}",
+        ship.ship_name, ship.motion_mode, ship.frame, ship.game_time
     )
 }
 
@@ -230,7 +242,7 @@ fn format_simulation_time(state: &SimulationTimeDto) -> String {
 
 #[cfg(test)]
 mod tests {
-    use space_game_protocol::{ErrorDto, LocationSummaryDto, ObjectSummaryDto};
+    use space_game_protocol::{ErrorDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto};
 
     use super::*;
 
@@ -260,8 +272,10 @@ mod tests {
                     connected: true,
                     server: "127.0.0.1:4000".to_string(),
                     game_time: "2097-01-01T00:00:00Z".to_string(),
-                    observer_label: "demo-observer".to_string(),
-                    observer_frame: "solar_system_barycentric_j2000".to_string(),
+                    ship_id: "player-ship".to_string(),
+                    ship_name: "Wayfarer".to_string(),
+                    ship_frame: "solar_system_barycentric_j2000".to_string(),
+                    ship_motion: "orbiting".to_string(),
                     object_count: 8,
                 },
             },
@@ -280,8 +294,10 @@ mod tests {
                     connected: true,
                     server: "127.0.0.1:4000".to_string(),
                     game_time: "2097-01-01T00:00:00Z".to_string(),
-                    observer_label: "demo-observer".to_string(),
-                    observer_frame: "solar_system_barycentric_j2000".to_string(),
+                    ship_id: "player-ship".to_string(),
+                    ship_name: "Wayfarer".to_string(),
+                    ship_frame: "solar_system_barycentric_j2000".to_string(),
+                    ship_motion: "orbiting".to_string(),
                     object_count: 8,
                 },
             },
@@ -290,7 +306,30 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["Status: connected=true server=127.0.0.1:4000 game_time=2097-01-01T00:00:00Z observer=demo-observer frame=solar_system_barycentric_j2000 objects=8"]
+            vec!["Status: connected=true server=127.0.0.1:4000 game_time=2097-01-01T00:00:00Z ship=Wayfarer motion=orbiting frame=solar_system_barycentric_j2000 objects=8"]
+        );
+    }
+
+    #[test]
+    fn formats_ship_response_for_expected_sequence() {
+        let lines = plain_output_lines(
+            &ServerToClient::ShipState {
+                seq: 8,
+                ship: ShipStateDto {
+                    ship_id: "player-ship".to_string(),
+                    ship_name: "Wayfarer".to_string(),
+                    motion_mode: "orbiting".to_string(),
+                    frame: "solar_system_barycentric_j2000".to_string(),
+                    game_time: "2097-01-01T00:00:00Z".to_string(),
+                    quality: Some("fictional".to_string()),
+                },
+            },
+            8,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Ship: Wayfarer motion=orbiting frame=solar_system_barycentric_j2000 game_time=2097-01-01T00:00:00Z"]
         );
     }
 

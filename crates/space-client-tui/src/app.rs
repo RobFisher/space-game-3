@@ -3,7 +3,7 @@ use std::{io, time::Instant};
 use chrono::{DateTime, SecondsFormat, Utc};
 use space_game_protocol::{
     ClientToServer, CompletionCandidateDto, DistanceResultDto, LocationSummaryDto,
-    ObjectSummaryDto, ServerToClient, SimulationTimeDto, StatusDto,
+    ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto, StatusDto,
 };
 
 use crate::{
@@ -32,8 +32,10 @@ pub struct ClientApp {
 pub struct ClientStatusView {
     pub server: String,
     pub game_time: String,
-    pub observer_label: String,
-    pub observer_frame: String,
+    pub ship_id: String,
+    pub ship_name: String,
+    pub ship_frame: String,
+    pub ship_motion: String,
     pub object_count: usize,
     pub last_update: String,
 }
@@ -60,8 +62,10 @@ impl ClientApp {
             status: ClientStatusView {
                 server: server_url.clone(),
                 game_time: "-".to_string(),
-                observer_label: "-".to_string(),
-                observer_frame: "-".to_string(),
+                ship_id: "-".to_string(),
+                ship_name: "-".to_string(),
+                ship_frame: "-".to_string(),
+                ship_motion: "-".to_string(),
                 object_count: 0,
                 last_update: "-".to_string(),
             },
@@ -219,6 +223,7 @@ impl ClientApp {
                     self.display_distance(result);
                 }
             }
+            ServerToClient::ShipState { ship, .. } => self.display_ship_state(ship),
             ServerToClient::LocationSummary { summary, .. } => self.display_location(summary),
             ServerToClient::SimulationTime { seq, state } => {
                 self.apply_simulation_time(&state);
@@ -253,8 +258,10 @@ impl ClientApp {
         self.status = ClientStatusView {
             server: status.server,
             game_time: status.game_time.clone(),
-            observer_label: status.observer_label,
-            observer_frame: status.observer_frame,
+            ship_id: status.ship_id,
+            ship_name: status.ship_name,
+            ship_frame: status.ship_frame,
+            ship_motion: status.ship_motion,
             object_count: status.object_count,
             last_update: status.game_time,
         };
@@ -324,6 +331,19 @@ impl ClientApp {
         ));
     }
 
+    fn display_ship_state(&mut self, ship: ShipStateDto) {
+        self.status.ship_id = ship.ship_id;
+        self.status.ship_name = ship.ship_name.clone();
+        self.status.ship_frame = ship.frame.clone();
+        self.status.ship_motion = ship.motion_mode.clone();
+        self.status.game_time = ship.game_time.clone();
+        self.status.last_update = ship.game_time.clone();
+        self.push_output(format!(
+            "Ship: {} ({}, frame {}, time {})",
+            ship.ship_name, ship.motion_mode, ship.frame, ship.game_time
+        ));
+    }
+
     fn display_simulation_time(&mut self, state: &SimulationTimeDto) {
         self.push_output(format!(
             "Simulation time: {} (running={}, rate={:.1})",
@@ -342,7 +362,7 @@ mod tests {
 
     use space_game_protocol::{
         DistanceResultDto, ErrorDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
-        SimulationTimeDto, StatusDto,
+        ShipStateDto, SimulationTimeDto, StatusDto,
     };
 
     use super::*;
@@ -419,14 +439,17 @@ mod tests {
                 connected: true,
                 server: "127.0.0.1:4000".to_string(),
                 game_time: "2097-01-01T00:00:00Z".to_string(),
-                observer_label: "demo-observer".to_string(),
-                observer_frame: "solar_system_barycentric_j2000".to_string(),
+                ship_id: "player-ship".to_string(),
+                ship_name: "Wayfarer".to_string(),
+                ship_frame: "solar_system_barycentric_j2000".to_string(),
+                ship_motion: "orbiting".to_string(),
                 object_count: 8,
             },
         });
 
         assert_eq!(app.input_value(), "distance mars");
         assert_eq!(app.status.object_count, 8);
+        assert_eq!(app.status.ship_name, "Wayfarer");
         assert_eq!(app.display_game_time(), "2097-01-01T00:00:00Z");
     }
 
@@ -556,6 +579,17 @@ mod tests {
                 quality: Some("fictional".to_string()),
             },
         });
+        app.apply_server_message(ServerToClient::ShipState {
+            seq: 5,
+            ship: ShipStateDto {
+                ship_id: "player-ship".to_string(),
+                ship_name: "Wayfarer".to_string(),
+                motion_mode: "orbiting".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T00:00:00Z".to_string(),
+                quality: Some("fictional".to_string()),
+            },
+        });
         app.apply_server_message(ServerToClient::Error {
             seq: Some(3),
             error: ErrorDto {
@@ -569,6 +603,10 @@ mod tests {
             .iter()
             .any(|line| line.contains("Known objects")));
         assert!(app.output_lines.iter().any(|line| line.contains("Mars:")));
+        assert!(app
+            .output_lines
+            .iter()
+            .any(|line| line.contains("Ship: Wayfarer")));
         let location_line = app
             .output_lines
             .iter()

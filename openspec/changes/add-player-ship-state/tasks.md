@@ -21,11 +21,11 @@
 
 ## 4. TUI and Plain Client
 
-- [ ] 4.1 Update the TUI view model to store and apply ship-oriented status fields.
-- [ ] 4.2 Render the player ship name in the TUI status pane.
-- [ ] 4.3 Display ship state responses in the output log.
-- [ ] 4.4 Update plain text mode status and ship response formatting.
-- [ ] 4.5 Update TUI and plain mode tests for ship status/name presentation.
+- [x] 4.1 Update the TUI view model to store and apply ship-oriented status fields.
+- [x] 4.2 Render the player ship name in the TUI status pane.
+- [x] 4.3 Display ship state responses in the output log.
+- [x] 4.4 Update plain text mode status and ship response formatting.
+- [x] 4.5 Update TUI and plain mode tests for ship status/name presentation.
 
 ## 5. Documentation and Verification
 
