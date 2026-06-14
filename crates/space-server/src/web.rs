@@ -241,13 +241,35 @@ mod tests {
 
         send_protocol(
             &mut socket,
-            ClientToServer::RequestSimulationTime { seq: 5 },
+            ClientToServer::Command {
+                seq: 5,
+                text: "where".to_string(),
+            },
+        )
+        .await;
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::CommandAck {
+                seq: 5,
+                accepted: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            recv_protocol(&mut socket).await,
+            ServerToClient::LocationSummary { seq: 5, summary }
+                if summary.observer_label == "demo-observer"
+        ));
+
+        send_protocol(
+            &mut socket,
+            ClientToServer::RequestSimulationTime { seq: 6 },
         )
         .await;
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::SimulationTime {
-                seq: Some(5),
+                seq: Some(6),
                 state
             } if state.running && state.rate == 1.0
         ));
@@ -255,7 +277,7 @@ mod tests {
         send_protocol(
             &mut socket,
             ClientToServer::AdvanceSimulationTime {
-                seq: 6,
+                seq: 7,
                 amount: 1,
                 unit: space_game_protocol::TimeUnit::Days,
             },
@@ -264,7 +286,7 @@ mod tests {
         assert!(matches!(
             recv_protocol(&mut socket).await,
             ServerToClient::SimulationTime {
-                seq: Some(6),
+                seq: Some(7),
                 state
             } if state.current_time.starts_with("2097-01-02T")
         ));

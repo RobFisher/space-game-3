@@ -21,6 +21,7 @@ const SERVER_COMMANDS: &[&str] = &[
     "objects",
     "status",
     "time",
+    "where",
 ];
 const DISTANCE_OPTIONS: &[&str] = &["--at"];
 const DISTANCES_OPTIONS: &[&str] = &["--at", "--limit", "--sort"];
@@ -394,7 +395,7 @@ fn handle_command(
     match command.as_str() {
         "help" => Ok(vec![ServerToClient::OutputLine {
             seq: Some(seq),
-            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, time, advance <amount> <seconds|minutes|hours|days>, quit".to_string(),
+            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, time, advance <amount> <seconds|minutes|hours|days>, where, quit".to_string(),
         }]),
         "objects" => Ok(vec![ServerToClient::Objects {
             seq,
@@ -416,6 +417,15 @@ fn handle_command(
         }
         "status" => Ok(vec![status_message(service, clock, Some(seq))]),
         "time" => Ok(vec![simulation_time_message(clock, Some(seq))]),
+        "where" => {
+            if let Some(extra) = words.get(1) {
+                return Err(CommandError::UnknownCommand(format!("where {extra}")));
+            }
+            Ok(vec![ServerToClient::LocationSummary {
+                seq,
+                summary: service.location_summary(effective_time(clock, None)?)?,
+            }])
+        }
         "advance" => {
             let (amount, unit) = parse_advance_args(&words[1..])?;
             Ok(vec![advance_time_message(clock, seq, amount, unit)])
@@ -718,6 +728,32 @@ mod tests {
     }
 
     #[test]
+    fn handles_where_command_with_sequence() {
+        let responses = handle_command_message(&service(), &clock(), 12, "where");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::LocationSummary { seq: 12, summary }
+                if summary.observer_label == "demo-observer"
+                    && summary.frame == "solar_system_barycentric_j2000"
+                    && !summary.nearest_object_id.is_empty()
+        ));
+    }
+
+    #[test]
+    fn default_where_uses_advanced_clock() {
+        let clock = clock();
+        let _ = handle_command_message(&service(), &clock, 19, "advance 1 day");
+        let responses = handle_command_message(&service(), &clock, 20, "where");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::LocationSummary { summary, .. }
+                if summary.game_time == "2097-01-02T00:00:00Z"
+        ));
+    }
+
+    #[test]
     fn handles_advance_command() {
         let clock = clock();
         let responses = handle_command_message(&service(), &clock, 14, "advance 1 day");
@@ -792,6 +828,35 @@ mod tests {
                     .candidates
                     .iter()
                     .any(|candidate| candidate.insertion == "distances"));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn completes_where_command_name() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 27,
+                input: "wh".to_string(),
+                cursor: 2,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.seq, 27);
+                assert_eq!(response.replacement.start, 0);
+                assert_eq!(response.replacement.end, 2);
+                assert_eq!(
+                    response
+                        .candidates
+                        .iter()
+                        .map(|candidate| candidate.insertion.as_str())
+                        .collect::<Vec<_>>(),
+                    vec!["where"]
+                );
             }
             other => panic!("unexpected response: {other:?}"),
         }

@@ -16,14 +16,14 @@
 
 - [x] 3.1 Add a query-service method that builds a location summary for the observer at a requested `GameTime`.
 - [x] 3.2 Calculate the nearest known object by resolving known object states and comparing Euclidean distance to the observer state.
-- [ ] 3.3 Ensure the location summary uses the current simulation clock when no explicit timestamp is supplied.
+- [x] 3.3 Ensure the location summary uses the current simulation clock when no explicit timestamp is supplied.
 - [x] 3.4 Add query-service tests for nearest-object selection, frame/time fields, quality propagation, and no raw coordinate output.
 
 ## 4. Server Commands
 
-- [ ] 4.1 Add `where` to server command parsing and help text.
-- [ ] 4.2 Add `where` to command autocomplete candidates.
-- [ ] 4.3 Add WebSocket and command-handler tests for `where`, completion for `wh`, and sequence correlation.
+- [x] 4.1 Add `where` to server command parsing and help text.
+- [x] 4.2 Add `where` to command autocomplete candidates.
+- [x] 4.3 Add WebSocket and command-handler tests for `where`, completion for `wh`, and sequence correlation.
 
 ## 5. TUI And Plain Text Client
 
