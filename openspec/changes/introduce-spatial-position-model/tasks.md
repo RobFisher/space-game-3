@@ -27,10 +27,10 @@
 
 ## 5. TUI And Plain Text Client
 
-- [ ] 5.1 Update the TUI view model to handle location summary responses.
-- [ ] 5.2 Display location summaries in the TUI output log as readable landmark-based text without raw coordinates.
-- [ ] 5.3 Update plain text mode to print deterministic location summary output for `where`.
-- [ ] 5.4 Add TUI app and plain text formatting tests for location summary display.
+- [x] 5.1 Update the TUI view model to handle location summary responses.
+- [x] 5.2 Display location summaries in the TUI output log as readable landmark-based text without raw coordinates.
+- [x] 5.3 Update plain text mode to print deterministic location summary output for `where`.
+- [x] 5.4 Add TUI app and plain text formatting tests for location summary display.
 
 ## 6. Documentation And Validation
 

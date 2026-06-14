@@ -1,8 +1,8 @@
 use color_eyre::eyre::{eyre, Result};
 use futures::{stream::Stream, Sink, SinkExt, StreamExt};
 use space_game_protocol::{
-    ClientToServer, DistanceResultDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto,
-    StatusDto,
+    ClientToServer, DistanceResultDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
+    SimulationTimeDto, StatusDto,
 };
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::{connect_async, tungstenite, tungstenite::Message};
@@ -67,6 +67,9 @@ pub fn plain_output_lines(message: &ServerToClient, expected_seq: u64) -> Vec<St
             let mut lines = vec!["Distances:".to_string()];
             lines.extend(results.iter().map(format_distance));
             lines
+        }
+        ServerToClient::LocationSummary { seq, summary } if *seq == expected_seq => {
+            vec![format_location(summary)]
         }
         ServerToClient::Status {
             seq: Some(seq),
@@ -168,6 +171,7 @@ fn is_command_completion(message: &ServerToClient, expected_seq: u64) -> bool {
         ServerToClient::Objects { seq, .. }
         | ServerToClient::Distance { seq, .. }
         | ServerToClient::Distances { seq, .. }
+        | ServerToClient::LocationSummary { seq, .. }
         | ServerToClient::Pong { seq } => *seq == expected_seq,
         ServerToClient::Status { seq: Some(seq), .. }
         | ServerToClient::SimulationTime { seq: Some(seq), .. }
@@ -192,6 +196,19 @@ fn format_distance(result: &DistanceResultDto) -> String {
     )
 }
 
+fn format_location(summary: &LocationSummaryDto) -> String {
+    format!(
+        "Location: {} nearest {} ({}) at {:.3} AU / {:.0} km frame={} game_time={}",
+        summary.observer_label,
+        summary.nearest_object_name,
+        summary.nearest_object_id,
+        summary.distance_au,
+        summary.distance_km,
+        summary.frame,
+        summary.game_time
+    )
+}
+
 fn format_status(status: &StatusDto) -> String {
     format!(
         "Status: connected={} server={} game_time={} observer={} frame={} objects={}",
@@ -213,7 +230,7 @@ fn format_simulation_time(state: &SimulationTimeDto) -> String {
 
 #[cfg(test)]
 mod tests {
-    use space_game_protocol::{ErrorDto, ObjectSummaryDto};
+    use space_game_protocol::{ErrorDto, LocationSummaryDto, ObjectSummaryDto};
 
     use super::*;
 
@@ -295,6 +312,34 @@ mod tests {
             lines,
             vec!["Simulation time: 2097-01-01T00:00:00Z running=true rate=1"]
         );
+    }
+
+    #[test]
+    fn formats_location_summary_for_expected_sequence_without_coordinates() {
+        let lines = plain_output_lines(
+            &ServerToClient::LocationSummary {
+                seq: 7,
+                summary: LocationSummaryDto {
+                    observer_label: "demo-observer".to_string(),
+                    frame: "solar_system_barycentric_j2000".to_string(),
+                    game_time: "2097-01-01T00:00:00Z".to_string(),
+                    nearest_object_id: "earth".to_string(),
+                    nearest_object_name: "Earth".to_string(),
+                    distance_km: 42_000.0,
+                    distance_au: 0.000_280_753,
+                    quality: Some("fictional".to_string()),
+                },
+            },
+            7,
+        );
+
+        assert_eq!(
+            lines,
+            vec!["Location: demo-observer nearest Earth (earth) at 0.000 AU / 42000 km frame=solar_system_barycentric_j2000 game_time=2097-01-01T00:00:00Z"]
+        );
+        assert!(!lines[0].contains(" x"));
+        assert!(!lines[0].contains(" y"));
+        assert!(!lines[0].contains(" z"));
     }
 
     #[test]

@@ -2,8 +2,8 @@ use std::{io, time::Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use space_game_protocol::{
-    ClientToServer, CompletionCandidateDto, DistanceResultDto, ObjectSummaryDto, ServerToClient,
-    SimulationTimeDto, StatusDto,
+    ClientToServer, CompletionCandidateDto, DistanceResultDto, LocationSummaryDto,
+    ObjectSummaryDto, ServerToClient, SimulationTimeDto, StatusDto,
 };
 
 use crate::{
@@ -219,6 +219,7 @@ impl ClientApp {
                     self.display_distance(result);
                 }
             }
+            ServerToClient::LocationSummary { summary, .. } => self.display_location(summary),
             ServerToClient::SimulationTime { seq, state } => {
                 self.apply_simulation_time(&state);
                 if seq != Some(SILENT_TIME_SYNC_SEQ) {
@@ -311,6 +312,18 @@ impl ClientApp {
         ));
     }
 
+    fn display_location(&mut self, summary: LocationSummaryDto) {
+        self.push_output(format!(
+            "{} is nearest {} at {:.3} AU / {:.0} km (frame {}, time {})",
+            summary.observer_label,
+            summary.nearest_object_name,
+            summary.distance_au,
+            summary.distance_km,
+            summary.frame,
+            summary.game_time
+        ));
+    }
+
     fn display_simulation_time(&mut self, state: &SimulationTimeDto) {
         self.push_output(format!(
             "Simulation time: {} (running={}, rate={:.1})",
@@ -328,7 +341,8 @@ mod tests {
     };
 
     use space_game_protocol::{
-        DistanceResultDto, ErrorDto, ObjectSummaryDto, ServerToClient, SimulationTimeDto, StatusDto,
+        DistanceResultDto, ErrorDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient,
+        SimulationTimeDto, StatusDto,
     };
 
     use super::*;
@@ -355,6 +369,20 @@ mod tests {
         );
         assert_eq!(app.next_seq, 2);
         assert!(app.output_lines.iter().any(|line| line == "> objects"));
+    }
+
+    #[test]
+    fn submits_where_command() {
+        let mut app = ClientApp::default();
+        app.set_input("where");
+
+        assert_eq!(
+            app.submit_input(),
+            Some(ClientToServer::Command {
+                seq: 1,
+                text: "where".to_string()
+            })
+        );
     }
 
     #[test]
@@ -499,6 +527,19 @@ mod tests {
                 quality: Some("fictional".to_string()),
             },
         });
+        app.apply_server_message(ServerToClient::LocationSummary {
+            seq: 4,
+            summary: LocationSummaryDto {
+                observer_label: "demo-observer".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T00:00:00Z".to_string(),
+                nearest_object_id: "earth".to_string(),
+                nearest_object_name: "Earth".to_string(),
+                distance_km: 42_000.0,
+                distance_au: 0.000_280_753,
+                quality: Some("fictional".to_string()),
+            },
+        });
         app.apply_server_message(ServerToClient::Error {
             seq: Some(3),
             error: ErrorDto {
@@ -512,6 +553,16 @@ mod tests {
             .iter()
             .any(|line| line.contains("Known objects")));
         assert!(app.output_lines.iter().any(|line| line.contains("Mars:")));
+        let location_line = app
+            .output_lines
+            .iter()
+            .find(|line| line.contains("demo-observer is nearest Earth"))
+            .expect("location summary output");
+        assert!(location_line.contains("solar_system_barycentric_j2000"));
+        assert!(location_line.contains("2097-01-01T00:00:00Z"));
+        assert!(!location_line.contains(" x"));
+        assert!(!location_line.contains(" y"));
+        assert!(!location_line.contains(" z"));
         assert!(app
             .output_lines
             .iter()
