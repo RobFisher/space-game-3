@@ -11,7 +11,7 @@ The current build is a minimal networked vertical slice rather than a full game.
 - a shared JSON client/server protocol,
 - and a Ratatui TUI client.
 
-The demo lets a client connect to the local server, list fictional solar-system objects, query distances from a fixed demo observer, view connection/game-time status, and exit cleanly.
+The demo lets a client connect to the local server, list fictional solar-system objects, query distances from the player ship, view ship/game-time status, rename the ship for the current server run, and exit cleanly.
 
 Supported TUI commands include:
 
@@ -25,6 +25,9 @@ distances --limit 10
 distances --sort distance
 distances --at 2097-01-02T00:00:00Z
 status
+ship
+ship status
+ship name Wayfarer
 time
 advance 10 minutes
 where

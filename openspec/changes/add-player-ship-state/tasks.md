@@ -29,6 +29,6 @@
 
 ## 5. Documentation and Verification
 
-- [ ] 5.1 Update README command examples and descriptions from fixed observer wording to player ship wording.
+- [x] 5.1 Update README command examples and descriptions from fixed observer wording to player ship wording.
 - [ ] 5.2 Run `cargo test` for the affected workspace crates.
 - [ ] 5.3 Run `openspec validate --all`.
