@@ -33,3 +33,11 @@ The TUI client SHALL present server flight plan responses as readable gameplay t
 #### Scenario: Status pane displays active flight ETA
 - **WHEN** the interactive TUI has received an active flight plan response
 - **THEN** the status pane displays the active flight target, arrival time, and countdown to arrival derived from the current displayed game time
+
+#### Scenario: Status pane displays destination distance
+- **WHEN** the interactive TUI has an active flight plan with duration and acceleration
+- **THEN** the status pane displays the estimated remaining distance to the destination derived from the flight plan timing and current displayed game time
+
+#### Scenario: Startup syncs active flight status
+- **WHEN** the interactive TUI connects to the server
+- **THEN** it requests current flight status without adding a user-visible command response to the output log
