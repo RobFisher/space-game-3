@@ -30,5 +30,5 @@
 ## 5. Documentation and Verification
 
 - [x] 5.1 Update README command examples and descriptions from fixed observer wording to player ship wording.
-- [ ] 5.2 Run `cargo test` for the affected workspace crates.
-- [ ] 5.3 Run `openspec validate --all`.
+- [x] 5.2 Run `cargo test` for the affected workspace crates.
+- [x] 5.3 Run `openspec validate --all`.
