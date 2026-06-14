@@ -34,6 +34,11 @@ The TUI client SHALL render a structured layout with an output log, a status pan
 - **WHEN** a status message is received while the user is editing command input
 - **THEN** the status pane updates without clearing the command input
 
+#### Scenario: Show ship name in status pane
+
+- **WHEN** the TUI client draws a frame after receiving server status
+- **THEN** the status pane shows the current player ship name
+
 ### Requirement: Command submission
 
 The TUI client SHALL send supported user-entered command text to the server using protocol command messages with monotonically increasing sequence numbers.
@@ -50,7 +55,7 @@ The TUI client SHALL send supported user-entered command text to the server usin
 
 ### Requirement: Location summary presentation
 
-The TUI client SHALL let users request the current observer location with `where`, request object locations with `where <object> [--at <timestamp>]`, and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
+The TUI client SHALL let users request the current player ship location with `where`, request object locations with `where <object> [--at <timestamp>]`, and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
 
 #### Scenario: Submit where command
 
@@ -102,7 +107,7 @@ The TUI client SHALL let users request and advance simulation time through comma
 
 ### Requirement: Server message presentation
 
-The TUI client SHALL update its local view model from server protocol messages and present object lists, distance results, errors, status values, and simulation time values to the user.
+The TUI client SHALL update its local view model from server protocol messages and present object lists, distance results, errors, status values, ship state values, and simulation time values to the user.
 
 #### Scenario: Display object list
 
@@ -118,6 +123,11 @@ The TUI client SHALL update its local view model from server protocol messages a
 
 - **WHEN** the client receives a distances response
 - **THEN** it appends readable distance entries to the output log
+
+#### Scenario: Display ship state
+
+- **WHEN** the client receives a ship state response
+- **THEN** it appends a readable line containing the ship name, motion mode, frame, and simulation time to the output log
 
 #### Scenario: Display simulation time
 
@@ -187,7 +197,12 @@ line-oriented text suitable for automated assertions.
 
 - **WHEN** plain text mode receives a status response for a submitted `status`
   command
-- **THEN** it prints plain text status values that can be asserted by tests
+- **THEN** it prints plain text status values including the player ship name that can be asserted by tests
+
+#### Scenario: Print ship response
+
+- **WHEN** plain text mode receives a ship state response for a submitted `ship` command
+- **THEN** it prints a plain text line containing the ship name, motion mode, frame, and simulation time
 
 #### Scenario: Print simulation time response
 

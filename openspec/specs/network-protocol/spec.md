@@ -20,6 +20,25 @@ The system SHALL define shared client-to-server and server-to-client message typ
 - **WHEN** a server distance response containing object identity, display name, distance kilometers, distance astronomical units, and game time is serialized to JSON and deserialized again
 - **THEN** the resulting message preserves all distance result fields
 
+#### Scenario: Serialize server ship response
+
+- **WHEN** a server ship response containing ship identity, display name, motion mode, frame, game time, and quality is serialized to JSON and deserialized again
+- **THEN** the resulting message preserves all ship result fields
+
+### Requirement: Ship protocol messages
+
+The protocol SHALL represent server responses containing the current player ship id, display name, motion mode, frame, resolved game time, and optional spatial quality.
+
+#### Scenario: Serialize ship state response
+
+- **WHEN** a server ship response is serialized to JSON and deserialized again
+- **THEN** the resulting message preserves the sequence number, ship id, ship name, motion mode, frame, game time, and quality
+
+#### Scenario: Correlate ship response
+
+- **WHEN** the server responds to a `ship` command with sequence number 11
+- **THEN** the ship response includes sequence number 11
+
 ### Requirement: Location summary protocol messages
 
 The protocol SHALL represent server location summary responses containing the subject identity/label, subject type, frame, game time, nearest known object identity, nearest known object display name, distance kilometers, distance astronomical units, and optional spatial quality.
@@ -69,7 +88,7 @@ Client-initiated requests that expect command-specific responses SHALL include a
 
 ### Requirement: Status messages
 
-The protocol SHALL represent server status messages containing game time, observer label, observer frame, object count, and connection-relevant server information.
+The protocol SHALL represent server status messages containing game time, player ship id, player ship name, player ship frame, player ship motion mode, object count, and connection-relevant server information.
 
 #### Scenario: Receive unsolicited status
 
@@ -80,6 +99,11 @@ The protocol SHALL represent server status messages containing game time, observ
 
 - **WHEN** the server sends a status update
 - **THEN** the status message includes the current authoritative simulation time
+
+#### Scenario: Receive status with ship identity
+
+- **WHEN** the server sends a status update
+- **THEN** the status message includes the current player ship id, player ship name, player ship frame, and player ship motion mode
 
 ### Requirement: Simulation time protocol messages
 
