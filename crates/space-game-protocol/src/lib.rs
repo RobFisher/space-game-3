@@ -75,6 +75,10 @@ pub enum ServerToClient {
         seq: u64,
         results: Vec<DistanceResultDto>,
     },
+    ShipState {
+        seq: u64,
+        ship: ShipStateDto,
+    },
     LocationSummary {
         seq: u64,
         summary: LocationSummaryDto,
@@ -154,9 +158,21 @@ pub struct StatusDto {
     pub connected: bool,
     pub server: String,
     pub game_time: String,
-    pub observer_label: String,
-    pub observer_frame: String,
+    pub ship_id: String,
+    pub ship_name: String,
+    pub ship_frame: String,
+    pub ship_motion: String,
     pub object_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShipStateDto {
+    pub ship_id: String,
+    pub ship_name: String,
+    pub motion_mode: String,
+    pub frame: String,
+    pub game_time: String,
+    pub quality: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -284,9 +300,28 @@ mod tests {
                 connected: true,
                 server: "127.0.0.1:4000".to_string(),
                 game_time: "2097-01-01T00:00:00Z".to_string(),
-                observer_label: "demo-observer".to_string(),
-                observer_frame: "solar_system_barycentric_j2000".to_string(),
+                ship_id: "player-ship".to_string(),
+                ship_name: "Wayfarer".to_string(),
+                ship_frame: "solar_system_barycentric_j2000".to_string(),
+                ship_motion: "orbiting".to_string(),
                 object_count: 8,
+            },
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn ship_state_round_trips_with_sequence() {
+        let msg = ServerToClient::ShipState {
+            seq: 11,
+            ship: ShipStateDto {
+                ship_id: "player-ship".to_string(),
+                ship_name: "Wayfarer".to_string(),
+                motion_mode: "orbiting".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T00:00:00Z".to_string(),
+                quality: Some("fictional".to_string()),
             },
         };
 

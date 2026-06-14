@@ -7,9 +7,9 @@
 
 ## 2. Protocol
 
-- [ ] 2.1 Add ship state DTOs and server-to-client ship response messages to `space-game-protocol`.
-- [ ] 2.2 Replace observer-oriented status DTO fields with ship-oriented status fields.
-- [ ] 2.3 Add protocol serialization round-trip tests for ship responses and updated status messages.
+- [x] 2.1 Add ship state DTOs and server-to-client ship response messages to `space-game-protocol`.
+- [x] 2.2 Replace observer-oriented status DTO fields with ship-oriented status fields.
+- [x] 2.3 Add protocol serialization round-trip tests for ship responses and updated status messages.
 
 ## 3. Server Query and Commands
 
