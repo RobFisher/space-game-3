@@ -9,6 +9,7 @@ use space_game_protocol::{
     CompletionResponseDto, DistanceSort, ErrorDto, ReplacementSpanDto, ServerToClient, TimeUnit,
 };
 
+use crate::ship::DEFAULT_FLIGHT_ACCELERATION_KM_S2;
 use crate::{clock::SimulationClock, query::SolarSystemQueryService};
 
 pub type SharedSimulationClock = Arc<RwLock<SimulationClock>>;
@@ -17,6 +18,7 @@ const SERVER_COMMANDS: &[&str] = &[
     "advance",
     "distance",
     "distances",
+    "flight",
     "help",
     "objects",
     "ship",
@@ -26,6 +28,7 @@ const SERVER_COMMANDS: &[&str] = &[
 ];
 const DISTANCE_OPTIONS: &[&str] = &["--at"];
 const DISTANCES_OPTIONS: &[&str] = &["--at", "--limit", "--sort"];
+const FLIGHT_PLAN_OPTIONS: &[&str] = &["--accel"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
@@ -45,6 +48,12 @@ pub enum CommandError {
     MissingTimestamp,
     #[error("missing ship name")]
     MissingShipName,
+    #[error("missing flight subcommand")]
+    MissingFlightSubcommand,
+    #[error("missing acceleration")]
+    MissingAcceleration,
+    #[error("invalid acceleration: {0}")]
+    InvalidAcceleration(String),
     #[error(transparent)]
     InvalidShipName(#[from] crate::ship::ShipNameError),
     #[error("unknown command: {0}")]
@@ -67,6 +76,9 @@ impl CommandError {
             | Self::UnsupportedTimeUnit(_)
             | Self::MissingTimestamp
             | Self::MissingShipName
+            | Self::MissingFlightSubcommand
+            | Self::MissingAcceleration
+            | Self::InvalidAcceleration(_)
             | Self::InvalidShipName(_)
             | Self::UnknownCommand(_)
             | Self::Time(_) => ErrorDto {
@@ -79,6 +91,9 @@ impl CommandError {
                     Self::UnsupportedTimeUnit(_) => "unsupported_time_unit",
                     Self::MissingTimestamp => "missing_timestamp",
                     Self::MissingShipName => "missing_ship_name",
+                    Self::MissingFlightSubcommand => "missing_flight_subcommand",
+                    Self::MissingAcceleration => "missing_acceleration",
+                    Self::InvalidAcceleration(_) => "invalid_acceleration",
                     Self::InvalidShipName(_) => "invalid_ship_name",
                     Self::UnknownCommand(_) => "unknown_command",
                     Self::Time(_) => "invalid_game_time",
@@ -227,6 +242,7 @@ fn complete_input(
                 candidates: object_candidates(service, prefix),
             }
         }
+        "flight" => complete_flight(service, &tokens, current_index, replacement, prefix),
         "distances" => {
             if prefix.starts_with("--") {
                 CompletionResult {
@@ -248,6 +264,58 @@ fn complete_input(
             replacement,
             candidates: Vec::new(),
         },
+    }
+}
+
+fn complete_flight(
+    service: &SolarSystemQueryService,
+    tokens: &[TokenSpan<'_>],
+    current_index: usize,
+    replacement: ReplacementSpanDto,
+    prefix: &str,
+) -> CompletionResult {
+    if current_index == 1 {
+        return CompletionResult {
+            replacement,
+            candidates: complete_words(
+                &["plan", "status", "cancel"],
+                prefix,
+                CompletionCandidateKindDto::Command,
+            ),
+        };
+    }
+
+    if tokens.get(1).map(|token| token.text) != Some("plan") {
+        return CompletionResult {
+            replacement,
+            candidates: Vec::new(),
+        };
+    }
+
+    if prefix.starts_with("--") {
+        return CompletionResult {
+            replacement,
+            candidates: complete_words(
+                FLIGHT_PLAN_OPTIONS,
+                prefix,
+                CompletionCandidateKindDto::Option,
+            ),
+        };
+    }
+    if tokens
+        .iter()
+        .take(current_index)
+        .any(|token| token.text == "--accel")
+    {
+        return CompletionResult {
+            replacement,
+            candidates: Vec::new(),
+        };
+    }
+
+    CompletionResult {
+        replacement,
+        candidates: object_candidates(service, prefix),
     }
 }
 
@@ -412,7 +480,7 @@ fn handle_command(
     match command.as_str() {
         "help" => Ok(vec![ServerToClient::OutputLine {
             seq: Some(seq),
-            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, ship [status|name <name>], time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
+            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, ship [status|name <name>], flight plan <object> [--accel km_per_s2], flight status, flight cancel, time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
         }]),
         "objects" => Ok(vec![ServerToClient::Objects {
             seq,
@@ -434,6 +502,7 @@ fn handle_command(
         }
         "status" => Ok(vec![status_message(service, clock, Some(seq))?]),
         "ship" => handle_ship_command(service, clock, seq, &words[1..]),
+        "flight" => handle_flight_command(service, clock, seq, &words[1..]),
         "time" => Ok(vec![simulation_time_message(clock, Some(seq))]),
         "where" => {
             if words.len() == 1 {
@@ -500,6 +569,73 @@ fn handle_ship_command(
         }
         Some(command) => Err(CommandError::UnknownCommand(format!("ship {command}"))),
     }
+}
+
+fn handle_flight_command(
+    service: &SolarSystemQueryService,
+    clock: &SharedSimulationClock,
+    seq: u64,
+    words: &[&str],
+) -> Result<Vec<ServerToClient>, CommandError> {
+    match words.first().map(|word| word.to_ascii_lowercase()) {
+        None => Err(CommandError::MissingFlightSubcommand),
+        Some(command) if command == "plan" => {
+            let (query, acceleration_km_s2) = parse_flight_plan_args(&words[1..])?;
+            let at = clock_snapshot(clock).current_time;
+            Ok(vec![ServerToClient::FlightPlan {
+                seq,
+                plan: Some(service.create_flight_plan(&query, at, acceleration_km_s2)?),
+            }])
+        }
+        Some(command) if command == "status" && words.len() == 1 => {
+            let at = clock_snapshot(clock).current_time;
+            Ok(vec![ServerToClient::FlightPlan {
+                seq,
+                plan: service.active_flight_plan(&at),
+            }])
+        }
+        Some(command) if command == "cancel" && words.len() == 1 => {
+            let at = clock_snapshot(clock).current_time;
+            Ok(vec![ServerToClient::FlightPlan {
+                seq,
+                plan: service.cancel_flight_plan(&at),
+            }])
+        }
+        Some(command) => Err(CommandError::UnknownCommand(format!("flight {command}"))),
+    }
+}
+
+fn parse_flight_plan_args(words: &[&str]) -> Result<(String, f64), CommandError> {
+    let accel_index = words.iter().position(|word| *word == "--accel");
+    let (query_words, acceleration_km_s2) = match accel_index {
+        Some(index) => {
+            let value = words
+                .get(index + 1)
+                .ok_or(CommandError::MissingAcceleration)?;
+            if words.len() > index + 2 {
+                return Err(CommandError::UnknownCommand(format!(
+                    "flight plan {}",
+                    words[index + 2]
+                )));
+            }
+            let acceleration = value
+                .parse::<f64>()
+                .map_err(|_| CommandError::InvalidAcceleration((*value).to_string()))?;
+            (&words[..index], acceleration)
+        }
+        None => (words, DEFAULT_FLIGHT_ACCELERATION_KM_S2),
+    };
+
+    if !acceleration_km_s2.is_finite() || acceleration_km_s2 <= 0.0 {
+        return Err(CommandError::InvalidAcceleration(
+            acceleration_km_s2.to_string(),
+        ));
+    }
+
+    let query = (!query_words.is_empty())
+        .then(|| query_words.join(" "))
+        .ok_or(CommandError::MissingObjectQuery)?;
+    Ok((query, acceleration_km_s2))
 }
 
 fn parse_distances_args(
@@ -654,7 +790,9 @@ fn response_or_error(
 mod tests {
     use std::time::Instant;
 
-    use space_game_protocol::{CompletionCandidateKindDto, CompletionRequestDto, DistanceSort};
+    use space_game_protocol::{
+        CompletionCandidateKindDto, CompletionRequestDto, DistanceSort, FlightPlanStatusDto,
+    };
 
     use super::*;
     use crate::config::{ServerConfig, DEFAULT_GAME_TIME};
@@ -1266,5 +1404,141 @@ mod tests {
             }
             other => panic!("unexpected response: {other:?}"),
         }
+    }
+
+    #[test]
+    fn handles_flight_plan_command_with_explicit_acceleration() {
+        let service = service();
+        let responses =
+            handle_command_message(&service, &clock(), 40, "flight plan mars --accel 0.03");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::FlightPlan {
+                seq: 40,
+                plan: Some(plan)
+            } if plan.plan_id == "flight-1"
+                && plan.ship_id == "player-ship"
+                && plan.acceleration_km_s2 == 0.03
+                && plan.status == FlightPlanStatusDto::Active
+                && plan.departure_time == DEFAULT_GAME_TIME
+                && plan.duration_seconds.is_finite()
+                && plan.duration_seconds > 0.0
+        ));
+    }
+
+    #[test]
+    fn handles_flight_plan_command_with_default_acceleration() {
+        let service = service();
+        let responses = handle_command_message(&service, &clock(), 41, "flight plan mars");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::FlightPlan {
+                plan: Some(plan), ..
+            } if plan.acceleration_km_s2 == DEFAULT_FLIGHT_ACCELERATION_KM_S2
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_flight_acceleration_and_preserves_motion() {
+        let service = service();
+        let responses =
+            handle_command_message(&service, &clock(), 42, "flight plan mars --accel 0");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::Error {
+                seq: Some(42),
+                error
+            } if error.code == "invalid_acceleration"
+        ));
+        let status = handle_command_message(&service, &clock(), 43, "flight status");
+        assert!(matches!(
+            &status[1],
+            ServerToClient::FlightPlan { plan: None, .. }
+        ));
+    }
+
+    #[test]
+    fn flight_status_and_cancel_report_plan_state() {
+        let service = service();
+        let clock = clock();
+        let _ = handle_command_message(&service, &clock, 44, "flight plan mars --accel 0.02");
+
+        let status = handle_command_message(&service, &clock, 45, "flight status");
+        assert!(matches!(
+            &status[1],
+            ServerToClient::FlightPlan {
+                seq: 45,
+                plan: Some(plan)
+            } if plan.plan_id == "flight-1" && plan.status == FlightPlanStatusDto::Active
+        ));
+
+        let cancelled = handle_command_message(&service, &clock, 46, "flight cancel");
+        assert!(matches!(
+            &cancelled[1],
+            ServerToClient::FlightPlan {
+                seq: 46,
+                plan: Some(plan)
+            } if plan.plan_id == "flight-1" && plan.status == FlightPlanStatusDto::Cancelled
+        ));
+
+        let status = handle_command_message(&service, &clock, 47, "flight status");
+        assert!(matches!(
+            &status[1],
+            ServerToClient::FlightPlan { plan: None, .. }
+        ));
+    }
+
+    #[test]
+    fn replacing_flight_plan_starts_new_plan_from_current_motion() {
+        let service = service();
+        let clock = clock();
+        let _ = handle_command_message(&service, &clock, 48, "flight plan mars --accel 0.02");
+        let _ = handle_command_message(&service, &clock, 49, "advance 10 minutes");
+        let replacement =
+            handle_command_message(&service, &clock, 50, "flight plan venus --accel 0.04");
+
+        assert!(matches!(
+            &replacement[1],
+            ServerToClient::FlightPlan {
+                seq: 50,
+                plan: Some(plan)
+            } if plan.plan_id == "flight-2"
+                && plan.acceleration_km_s2 == 0.04
+                && plan.departure_time == "2097-01-01T00:10:00Z"
+        ));
+    }
+
+    #[test]
+    fn ship_status_and_distance_use_active_and_completed_flight_motion() {
+        let service = service();
+        let clock = clock();
+        let _ = handle_command_message(&service, &clock, 51, "flight plan mars --accel 0.02");
+
+        let ship = handle_command_message(&service, &clock, 52, "ship status");
+        assert!(matches!(
+            &ship[1],
+            ServerToClient::ShipState { ship, .. } if ship.motion_mode == "flight_plan"
+        ));
+
+        let distance = handle_command_message(&service, &clock, 53, "distance mars");
+        let before_arrival = match &distance[1] {
+            ServerToClient::Distance { result, .. } => result.distance_km,
+            other => panic!("unexpected response: {other:?}"),
+        };
+
+        let plan = service
+            .active_flight_plan(&GameTime::from_utc_iso8601(DEFAULT_GAME_TIME).unwrap())
+            .unwrap();
+        let arrival = GameTime::from_utc_iso8601(&plan.arrival_time)
+            .unwrap()
+            .add_seconds(1.0);
+        let completed = service.ship_state(arrival.clone()).unwrap();
+        assert_eq!(completed.motion_mode, "orbiting");
+
+        let arrived_distance = service.distance_to("mars", arrival).unwrap();
+        assert!(arrived_distance.distance_km < before_arrival);
     }
 }

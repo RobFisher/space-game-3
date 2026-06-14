@@ -5,14 +5,18 @@ use space_game_ephemeris::{
     StateVector,
 };
 use space_game_protocol::{
-    DistanceResultDto, DistanceSort, ErrorDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto,
-    StatusDto,
+    DistanceResultDto, DistanceSort, ErrorDto, FlightPlanDto, FlightPlanStatusDto,
+    FlightPlanTargetDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto, StatusDto,
 };
 use thiserror::Error;
 
-use crate::ship::{PlayerShip, ResolvedShipState, ShipNameError};
+use crate::ship::{
+    transfer_duration_seconds, validate_acceleration, FlightPlan, FlightPlanError,
+    FlightPlanStatus, FlightPlanTarget, PlayerShip, ResolvedShipState, ShipNameError,
+};
 
 pub const AU_KM: f64 = 149_597_870.7;
+const INTERCEPT_ITERATIONS: usize = 8;
 
 #[derive(Debug)]
 pub struct SolarSystemQueryService {
@@ -37,6 +41,8 @@ pub enum QueryError {
     },
     #[error(transparent)]
     Ephemeris(#[from] EphemerisError),
+    #[error(transparent)]
+    FlightPlan(#[from] FlightPlanError),
 }
 
 impl QueryError {
@@ -46,6 +52,7 @@ impl QueryError {
             Self::AmbiguousObject { .. } => "ambiguous_object",
             Self::IncompatibleFrame { .. } => "incompatible_frame",
             Self::Ephemeris(_) => "ephemeris_error",
+            Self::FlightPlan(_) => "invalid_acceleration",
         };
         ErrorDto {
             code: code.to_string(),
@@ -90,12 +97,67 @@ impl SolarSystemQueryService {
 
     pub fn player_ship_state(&self, at: GameTime) -> Result<ResolvedShipState, QueryError> {
         let ship = self.player_ship();
+        if let Some(plan) = ship.active_flight_plan() {
+            if at < plan.arrival_time {
+                return Ok(ship.resolve_flight_plan_state(plan, at));
+            }
+            let target_state = self
+                .world
+                .state(plan.target.object_id().as_str(), at.clone())?;
+            return Ok(ship.resolve_arrived_orbiting_state(plan, at, target_state));
+        }
+
         let parent_id = ship
             .orbit_parent_id()
             .ok_or_else(|| QueryError::UnknownObject("ship parent".to_string()))?
             .to_string();
         let parent_state = self.world.state(&parent_id, at.clone())?;
         Ok(ship.resolve_orbiting_state(at, parent_state))
+    }
+
+    pub fn create_flight_plan(
+        &self,
+        object_query: &str,
+        departure_time: GameTime,
+        acceleration_km_s2: f64,
+    ) -> Result<FlightPlanDto, QueryError> {
+        validate_acceleration(acceleration_km_s2)?;
+        let target = self.resolve_object(object_query)?;
+        let origin_state = self.player_ship_state(departure_time.clone())?.state;
+        let (arrival_time, arrival_state, duration_seconds) = self.estimate_object_intercept(
+            &target,
+            &origin_state,
+            &departure_time,
+            acceleration_km_s2,
+        )?;
+        let mut ship = self.player_ship.write().expect("player ship lock poisoned");
+        let plan = ship.register_flight_plan(
+            origin_state,
+            FlightPlanTarget::Object {
+                object_id: target.id,
+                display_name: target.name,
+                arrival_state,
+            },
+            departure_time.clone(),
+            arrival_time,
+            duration_seconds,
+            acceleration_km_s2,
+        )?;
+        Ok(flight_plan_to_dto(&plan, &departure_time))
+    }
+
+    pub fn active_flight_plan(&self, at: &GameTime) -> Option<FlightPlanDto> {
+        self.player_ship()
+            .active_flight_plan()
+            .map(|plan| flight_plan_to_dto(plan, at))
+    }
+
+    pub fn cancel_flight_plan(&self, at: &GameTime) -> Option<FlightPlanDto> {
+        self.player_ship
+            .write()
+            .expect("player ship lock poisoned")
+            .cancel_active_flight_plan()
+            .map(|plan| flight_plan_to_dto(&plan, at))
     }
 
     pub fn list_objects(&self) -> Vec<ObjectSummaryDto> {
@@ -225,6 +287,38 @@ impl SolarSystemQueryService {
         })
     }
 
+    fn estimate_object_intercept(
+        &self,
+        object: &ObjectSummary,
+        origin_state: &StateVector,
+        departure_time: &GameTime,
+        acceleration_km_s2: f64,
+    ) -> Result<(GameTime, StateVector, f64), QueryError> {
+        let mut target_state = self
+            .world
+            .state(object.id.as_str(), departure_time.clone())?;
+        let mut duration_seconds = 0.0;
+        let mut arrival_time = departure_time.clone();
+
+        for _ in 0..INTERCEPT_ITERATIONS {
+            if origin_state.frame != target_state.frame {
+                return Err(QueryError::IncompatibleFrame {
+                    ship_frame: frame_label(&origin_state.frame),
+                    object: object.id.to_string(),
+                    object_frame: frame_label(&target_state.frame),
+                });
+            }
+            duration_seconds = transfer_duration_seconds(
+                origin_state.position_km.distance(target_state.position_km),
+                acceleration_km_s2,
+            );
+            arrival_time = departure_time.add_seconds(duration_seconds);
+            target_state = self.world.state(object.id.as_str(), arrival_time.clone())?;
+        }
+
+        Ok((arrival_time, target_state, duration_seconds))
+    }
+
     pub fn location_summary(&self, at: GameTime) -> Result<LocationSummaryDto, QueryError> {
         let ship_state = self.player_ship_state(at.clone())?;
         self.location_summary_for_state(
@@ -332,6 +426,33 @@ fn ship_state_to_dto(ship: ResolvedShipState) -> ShipStateDto {
         frame: frame_label(&ship.state.frame),
         game_time: ship.state.epoch.to_string(),
         quality: Some(quality_label(ship.state.quality)),
+    }
+}
+
+pub fn flight_plan_to_dto(plan: &FlightPlan, at: &GameTime) -> FlightPlanDto {
+    FlightPlanDto {
+        plan_id: plan.plan_id.clone(),
+        ship_id: plan.ship_id.clone(),
+        target: match &plan.target {
+            FlightPlanTarget::Object {
+                object_id,
+                display_name,
+                ..
+            } => FlightPlanTargetDto::Object {
+                object_id: object_id.to_string(),
+                display_name: display_name.clone(),
+            },
+        },
+        departure_time: plan.departure_time.to_string(),
+        arrival_time: plan.arrival_time.to_string(),
+        duration_seconds: plan.duration_seconds,
+        acceleration_km_s2: plan.acceleration_km_s2,
+        status: match plan.effective_status_at(at) {
+            FlightPlanStatus::Active => FlightPlanStatusDto::Active,
+            FlightPlanStatus::Completed => FlightPlanStatusDto::Completed,
+            FlightPlanStatus::Cancelled => FlightPlanStatusDto::Cancelled,
+        },
+        quality: Some(quality_label(plan.target_state().quality)),
     }
 }
 
