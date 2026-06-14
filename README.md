@@ -11,7 +11,7 @@ The current build is a minimal networked vertical slice rather than a full game.
 - a shared JSON client/server protocol,
 - and a Ratatui TUI client.
 
-The demo lets a client connect to the local server, list fictional solar-system objects, query distances from the player ship, view ship/game-time status, rename the ship for the current server run, and exit cleanly.
+The demo lets a client connect to the local server, list fictional solar-system objects, query distances from the player ship, create/cancel a basic flight plan to a known object, view ship/game-time status, rename the ship for the current server run, and exit cleanly.
 
 Supported TUI commands include:
 
@@ -28,6 +28,10 @@ status
 ship
 ship status
 ship name Wayfarer
+flight plan mars
+flight plan mars --accel 0.02
+flight status
+flight cancel
 time
 advance 10 minutes
 where

@@ -27,6 +27,6 @@
 
 ## 5. Documentation and Validation
 
-- [ ] 5.1 Update README command examples/help text for flight plan commands where appropriate.
-- [ ] 5.2 Run relevant Rust tests for protocol, server, and TUI crates.
-- [ ] 5.3 Run `openspec validate --all`.
+- [x] 5.1 Update README command examples/help text for flight plan commands where appropriate.
+- [x] 5.2 Run relevant Rust tests for protocol, server, and TUI crates.
+- [x] 5.3 Run `openspec validate --all`.
