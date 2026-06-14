@@ -27,14 +27,11 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
         .constraints([Constraint::Min(30), Constraint::Length(28)])
         .split(vertical[0]);
 
-    let output = app
-        .output_lines
-        .iter()
-        .rev()
-        .take(main[0].height.saturating_sub(2) as usize)
-        .rev()
-        .map(|line| Line::from(line.as_str()))
-        .collect::<Vec<_>>();
+    let output = visible_output_lines(
+        &app.output_lines,
+        main[0].width.saturating_sub(2) as usize,
+        main[0].height.saturating_sub(2) as usize,
+    );
     frame.render_widget(
         Paragraph::new(output)
             .block(Block::default().title("Output").borders(Borders::ALL))
@@ -124,6 +121,34 @@ pub fn draw(frame: &mut Frame<'_>, app: &ClientApp) {
     frame.set_cursor_position((cursor_x, cursor_y));
 }
 
+fn visible_output_lines(lines: &[String], width: usize, height: usize) -> Vec<Line<'static>> {
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+
+    let mut visual_lines = Vec::new();
+    for line in lines {
+        visual_lines.extend(wrap_output_line(line, width));
+    }
+    let start = visual_lines.len().saturating_sub(height);
+    visual_lines[start..]
+        .iter()
+        .map(|line| Line::from(line.clone()))
+        .collect()
+}
+
+fn wrap_output_line(line: &str, width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+
+    let chars = line.chars().collect::<Vec<_>>();
+    chars
+        .chunks(width)
+        .map(|chunk| chunk.iter().collect::<String>())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
@@ -177,5 +202,37 @@ mod tests {
         assert!(rendered.contains("Completions"));
         assert!(rendered.contains("Mars"));
         assert!(rendered.contains("Martian Station"));
+    }
+
+    #[test]
+    fn output_pane_shows_last_visual_rows_when_wrapped() {
+        let mut app = ClientApp::default();
+        app.output_lines.clear();
+        app.push_output("first line".to_string());
+        app.push_output("second line is long enough to wrap in a narrow pane".to_string());
+        app.push_output("final visible line".to_string());
+
+        let backend = TestBackend::new(42, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let rendered = format!("{:?}", terminal.backend().buffer());
+
+        assert!(rendered.contains("final visible line"));
+    }
+
+    #[test]
+    fn visible_output_lines_tails_wrapped_rows() {
+        let lines = vec![
+            "alpha".to_string(),
+            "bravo-charlie".to_string(),
+            "delta".to_string(),
+        ];
+
+        let visible = visible_output_lines(&lines, 5, 3)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(visible, vec!["-char", "lie", "delta"]);
     }
 }
