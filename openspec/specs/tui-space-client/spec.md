@@ -53,6 +53,25 @@ The TUI client SHALL send supported user-entered command text to the server usin
 - **WHEN** the user enters `distance mars`
 - **THEN** the client sends a command message containing `distance mars`
 
+### Requirement: Flight plan command UX
+
+The TUI client SHALL let users create, inspect, and cancel player ship flight plans by submitting flight commands to the server.
+
+#### Scenario: Submit flight plan command
+
+- **WHEN** the user enters `flight plan mars --accel 0.02`
+- **THEN** the client sends a command message containing `flight plan mars --accel 0.02`
+
+#### Scenario: Submit flight status command
+
+- **WHEN** the user enters `flight status`
+- **THEN** the client sends a command message containing `flight status`
+
+#### Scenario: Submit flight cancel command
+
+- **WHEN** the user enters `flight cancel`
+- **THEN** the client sends a command message containing `flight cancel`
+
 ### Requirement: Location summary presentation
 
 The TUI client SHALL let users request the current player ship location with `where`, request object locations with `where <object> [--at <timestamp>]`, and SHALL present server location summaries as readable landmark-based text without showing raw coordinates by default.
@@ -138,6 +157,40 @@ The TUI client SHALL update its local view model from server protocol messages a
 
 - **WHEN** the client receives an error response
 - **THEN** it appends the error message to the output log without exiting unless the user explicitly quits
+
+### Requirement: Flight plan presentation
+
+The TUI client SHALL present server flight plan responses as readable gameplay text.
+
+#### Scenario: Display active flight plan
+
+- **WHEN** the client receives an active flight plan response
+- **THEN** it appends a readable line containing the target, status, acceleration, departure time, arrival time, and duration to the output log
+
+#### Scenario: Display no active flight plan
+
+- **WHEN** the client receives a flight plan response indicating no active plan
+- **THEN** it appends a readable no-active-plan line to the output log
+
+#### Scenario: Plain mode displays flight plan response
+
+- **WHEN** plain text mode receives a flight plan response for a submitted flight command
+- **THEN** it prints a plain text line containing the target, status, acceleration, departure time, arrival time, and duration
+
+#### Scenario: Status pane displays active flight ETA
+
+- **WHEN** the interactive TUI has received an active flight plan response
+- **THEN** the status pane displays the active flight target, arrival time, and countdown to arrival derived from the current displayed game time
+
+#### Scenario: Status pane displays destination distance
+
+- **WHEN** the interactive TUI has an active flight plan with duration and acceleration
+- **THEN** the status pane displays the estimated remaining distance to the destination derived from the flight plan timing and current displayed game time
+
+#### Scenario: Startup syncs active flight status
+
+- **WHEN** the interactive TUI connects to the server
+- **THEN** it requests current flight status without adding a user-visible command response to the output log
 
 ### Requirement: Plain text client mode
 
