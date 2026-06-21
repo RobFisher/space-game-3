@@ -13,7 +13,12 @@ mod vector;
 mod world;
 
 pub use crate::error::EphemerisError;
-pub use crate::manifest::{KernelEntry, KernelKind, KernelManifest};
+pub use crate::manifest::{
+    default_asset_root, fetch_profile_assets, resolve_asset_path, resolved_asset_root,
+    verify_asset, verify_profile_assets, AssetEntry, AssetKind, AssetProfile, AssetVerification,
+    AssetVerificationStatus, EphemerisAssetManifest, KernelEntry, KernelKind, KernelManifest,
+    SelectedAsset, ASSET_ROOT_ENV,
+};
 pub use crate::object::{
     GameplayMetadata, ObjectDefinition, ObjectId, ObjectKind, ObjectSummary, PhysicalProperties,
 };

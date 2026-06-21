@@ -1,4 +1,5 @@
 use crate::time::GameTime;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// Errors returned by ephemeris registry loading and state queries.
@@ -25,9 +26,20 @@ pub enum EphemerisError {
     #[error("download failed: {0}")]
     DownloadFailed(String),
 
-    #[error("checksum mismatch for {filename}: expected {expected}, got {actual}")]
+    #[error(
+        "asset {asset_id} size mismatch at {path}: expected {expected} bytes, got {actual} bytes"
+    )]
+    AssetSizeMismatch {
+        asset_id: String,
+        path: PathBuf,
+        expected: u64,
+        actual: u64,
+    },
+
+    #[error("asset {asset_id} checksum mismatch at {path}: expected {expected}, got {actual}")]
     ChecksumMismatch {
-        filename: String,
+        asset_id: String,
+        path: PathBuf,
         expected: String,
         actual: String,
     },

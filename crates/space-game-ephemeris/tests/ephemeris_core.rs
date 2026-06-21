@@ -1,7 +1,9 @@
 use space_game_ephemeris::{
-    EphemerisError, EphemerisQuality, FrameId, GameTime, KernelManifest, ObjectKind,
-    ObjectRegistry, SolarSystemBuilder, StateVector, Vec3Km, Vec3KmPerSec,
+    default_asset_root, fetch_profile_assets, resolve_asset_path, verify_profile_assets,
+    AssetVerificationStatus, EphemerisAssetManifest, EphemerisError, EphemerisQuality, FrameId,
+    GameTime, ObjectKind, ObjectRegistry, SolarSystemBuilder, StateVector, Vec3Km, Vec3KmPerSec,
 };
+use std::fs;
 
 fn epoch() -> GameTime {
     GameTime::from_utc_iso8601("2097-01-01T00:00:00Z").unwrap()
@@ -363,36 +365,186 @@ altitude_km = 0.8
     ));
 }
 
-#[test]
-fn kernel_manifest_parses_and_validates_without_downloads() {
-    let manifest = KernelManifest::from_toml_str(
+fn fixture_asset_manifest() -> EphemerisAssetManifest {
+    EphemerisAssetManifest::from_toml_str(
         r#"
-schema_version = 1
-profile = "standard"
+version = 1
 
-[[kernels]]
-id = "leapseconds"
-kind = "lsk"
-filename = "naif0012.tls"
-url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"
-sha256 = "abc123"
+[profiles.minimal]
+description = "Fixture profile"
+assets = ["fixture"]
+
+[profiles.optional]
+description = "Optional profile"
+assets = ["optional"]
+
+[assets.fixture]
+kind = "spk"
+filename = "fixture.bsp"
+source = "fixture"
+url = "file:///tmp/fixture.bsp"
+local_path = "kernels/fixture.bsp"
+sha256 = "f0dad327e22e8cddc2e8057cf16d9b16ea6e36e87d31f46ee4d5943c69609c4f"
+size_bytes = 14
 required = true
-covers = "leap seconds"
+description = "Fixture asset"
+
+[assets.optional]
+kind = "spk"
+filename = "optional.bsp"
+source = "fixture"
+url = "file:///tmp/optional.bsp"
+local_path = "kernels/optional.bsp"
+required = false
 "#,
     )
-    .unwrap();
+    .unwrap()
+}
 
-    assert_eq!(manifest.kernels.len(), 1);
-    assert!(manifest.kernels[0].required);
+#[test]
+fn ephemeris_asset_manifest_parses_selects_profiles_and_rejects_invalid_data() {
+    let manifest = fixture_asset_manifest();
 
-    let invalid = KernelManifest::from_toml_str(
+    let selected = manifest.profile_assets("minimal").unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, "fixture");
+    assert!(selected[0].asset.required);
+
+    assert!(matches!(
+        manifest.profile_assets("missing"),
+        Err(EphemerisError::InvalidObjectDefinition(_))
+    ));
+
+    let invalid_reference = EphemerisAssetManifest::from_toml_str(
         r#"
-schema_version = 99
-profile = "standard"
+version = 1
+[profiles.bad]
+description = "Bad"
+assets = ["missing"]
+
+[assets.fixture]
+kind = "spk"
+filename = "fixture.bsp"
+source = "fixture"
+url = "file:///tmp/fixture.bsp"
+local_path = "kernels/fixture.bsp"
 "#,
     );
     assert!(matches!(
-        invalid,
+        invalid_reference,
         Err(EphemerisError::InvalidObjectDefinition(_))
     ));
+
+    let unsafe_path = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+[profiles.bad]
+description = "Bad"
+assets = ["fixture"]
+
+[assets.fixture]
+kind = "spk"
+filename = "naif0012.tls"
+source = "fixture"
+url = "file:///tmp/fixture.bsp"
+local_path = "../escape.bsp"
+required = true
+"#,
+    );
+    assert!(matches!(
+        unsafe_path,
+        Err(EphemerisError::InvalidObjectDefinition(_))
+    ));
+
+    let duplicate_profile_asset = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+[profiles.bad]
+description = "Bad"
+assets = ["fixture", "fixture"]
+
+[assets.fixture]
+kind = "spk"
+filename = "fixture.bsp"
+source = "fixture"
+url = "file:///tmp/fixture.bsp"
+local_path = "kernels/fixture.bsp"
+"#,
+    );
+    assert!(matches!(
+        duplicate_profile_asset,
+        Err(EphemerisError::InvalidObjectDefinition(_))
+    ));
+}
+
+#[test]
+fn asset_paths_and_offline_verification_report_clear_results() {
+    let manifest = fixture_asset_manifest();
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let asset = &manifest.profile_assets("minimal").unwrap()[0];
+    let path = resolve_asset_path(root, asset.asset);
+
+    assert!(path.ends_with("kernels/fixture.bsp"));
+    assert!(default_asset_root().ends_with("data/ephemeris"));
+
+    let missing = verify_profile_assets(&manifest, "minimal", root);
+    assert!(
+        matches!(missing, Err(EphemerisError::KernelNotFound(message)) if message.contains("fixture") && message.contains("fixture.bsp"))
+    );
+
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, b"fixture asset\n").unwrap();
+    let verified = verify_profile_assets(&manifest, "minimal", root).unwrap();
+    assert_eq!(verified.len(), 1);
+    assert_eq!(verified[0].id, "fixture");
+    assert_eq!(verified[0].status, AssetVerificationStatus::Valid);
+
+    fs::write(&path, b"wrong\n").unwrap();
+    let size_mismatch = verify_profile_assets(&manifest, "minimal", root);
+    assert!(matches!(
+        size_mismatch,
+        Err(EphemerisError::AssetSizeMismatch { asset_id, .. }) if asset_id == "fixture"
+    ));
+
+    let optional = verify_profile_assets(&manifest, "optional", root).unwrap();
+    assert_eq!(optional[0].status, AssetVerificationStatus::OptionalMissing);
+}
+
+#[test]
+fn fetch_assets_can_use_local_fixture_source_without_internet() {
+    let source_dir = tempfile::tempdir().unwrap();
+    let asset_root = tempfile::tempdir().unwrap();
+    let source_path = source_dir.path().join("fixture.bsp");
+    fs::write(&source_path, b"fixture asset\n").unwrap();
+
+    let manifest = EphemerisAssetManifest::from_toml_str(&format!(
+        r#"
+version = 1
+
+[profiles.minimal]
+description = "Fixture profile"
+assets = ["fixture"]
+
+[assets.fixture]
+kind = "spk"
+filename = "fixture.bsp"
+source = "fixture"
+url = "file://{}"
+local_path = "kernels/fixture.bsp"
+sha256 = "f0dad327e22e8cddc2e8057cf16d9b16ea6e36e87d31f46ee4d5943c69609c4f"
+size_bytes = 14
+required = true
+"#,
+        source_path.display()
+    ))
+    .unwrap();
+
+    let fetched = fetch_profile_assets(&manifest, "minimal", asset_root.path(), false).unwrap();
+    assert_eq!(fetched.len(), 1);
+    assert_eq!(fetched[0].status, AssetVerificationStatus::Valid);
+    assert_eq!(
+        fs::read(asset_root.path().join("kernels/fixture.bsp")).unwrap(),
+        b"fixture asset\n"
+    );
 }
