@@ -113,6 +113,34 @@ The older top-level placeholder binary can still be run with:
 cargo run -p space-game
 ```
 
+## Ephemeris Assets
+
+Real ephemeris files are described by the checked-in manifest at
+`data/ephemeris/manifest.toml`. Downloaded kernels are stored under
+`data/ephemeris/kernels/` by default and are ignored by git.
+
+List the assets selected by a profile:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- list --profile minimal
+```
+
+Verify local files without downloading anything:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- verify --profile minimal
+```
+
+Fetch missing or invalid files explicitly:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- fetch --profile minimal
+```
+
+Set `SPACE_GAME_EPHEMERIS_DATA_DIR=/path/to/ephemeris` to store downloaded
+assets outside the repository. Tests use fixture manifests and local files; they
+do not require internet access or real ephemeris downloads.
+
 ## OpenSpec
 
 This project uses [OpenSpec](https://openspec.dev/) for spec-driven development. The Nix dev shell provides the `openspec` CLI.

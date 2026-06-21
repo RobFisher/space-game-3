@@ -1,0 +1,52 @@
+version = 1
+
+[profiles.minimal]
+description = "Planets, Sun, Earth, and Moon. Good for local development."
+assets = ["de442s", "pck11"]
+
+[profiles.inner]
+description = "Minimal set plus Mars moons."
+assets = ["de442s", "pck11", "mar099s"]
+
+[assets.de442s]
+kind = "spk"
+filename = "de442s.bsp"
+source = "naif"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de442s.bsp"
+local_path = "kernels/spk/planets/de442s.bsp"
+approx_size = "31M"
+required = true
+description = "Compact JPL planetary/lunar ephemeris. Good default for game development."
+source_notes = "NASA NAIF generic kernels."
+
+[assets.de442]
+kind = "spk"
+filename = "de442.bsp"
+source = "naif"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de442.bsp"
+local_path = "kernels/spk/planets/de442.bsp"
+approx_size = "114M"
+required = false
+description = "Larger DE442 planetary/lunar ephemeris."
+source_notes = "NASA NAIF generic kernels."
+
+[assets.mar099s]
+kind = "spk"
+filename = "mar099s.bsp"
+source = "naif"
+url = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/satellites/mar099s.bsp"
+local_path = "kernels/spk/satellites/mar099s.bsp"
+approx_size = "64M"
+required = false
+description = "Compact Mars satellite ephemeris for Phobos and Deimos."
+source_notes = "NASA NAIF generic kernels."
+
+[assets.pck11]
+kind = "anise-pca"
+filename = "pck11.pca"
+source = "nyx-space"
+url = "https://public-data.nyxspace.com/anise/v0.5/pck11.pca"
+local_path = "kernels/pck/pck11.pca"
+required = true
+description = "ANISE planetary constants kernel."
+source_notes = "Nyx Space public ANISE data."
