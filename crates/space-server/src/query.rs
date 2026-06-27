@@ -491,7 +491,29 @@ mod tests {
     #[test]
     fn lists_demo_objects() {
         let objects = service().list_objects();
-        assert!(objects.iter().any(|object| object.id == "mars"));
+        let ids = objects
+            .iter()
+            .map(|object| object.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(objects.len(), 12);
+        for expected in [
+            "sun",
+            "mercury",
+            "venus",
+            "earth",
+            "moon",
+            "mars",
+            "jupiter",
+            "saturn",
+            "uranus",
+            "neptune",
+            "pluto",
+            "demo-station",
+        ] {
+            assert!(ids.contains(&expected), "missing {expected}");
+        }
+        assert!(!ids.contains(&"ceres"));
+        assert!(!ids.contains(&"luna"));
         assert!(objects.iter().any(|object| object.id == "demo-station"));
     }
 
@@ -676,7 +698,7 @@ frame = { type = "custom", value = "other" }
         assert_eq!(status.ship_id, "player-ship");
         assert_eq!(status.ship_name, "Wayfarer");
         assert_eq!(status.ship_motion, "orbiting");
-        assert_eq!(status.object_count, 8);
+        assert_eq!(status.object_count, 12);
     }
 
     #[test]

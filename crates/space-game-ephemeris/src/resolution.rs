@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::f64::consts::TAU;
 
 use crate::{
-    EphemerisError, EphemerisQuality, EphemerisSource, FrameId, GameTime, InterpolationMode,
-    ObjectRegistry, StateVector, Vec3Km, Vec3KmPerSec,
+    providers::spice::SpiceProvider, EphemerisError, EphemerisQuality, EphemerisSource, FrameId,
+    GameTime, InterpolationMode, ObjectRegistry, StateVector, Vec3Km, Vec3KmPerSec,
 };
 
 pub(crate) fn resolve_global_state(
@@ -12,7 +12,23 @@ pub(crate) fn resolve_global_state(
     epoch: &GameTime,
 ) -> Result<StateVector, EphemerisError> {
     let mut visited = HashSet::new();
-    resolve_global_state_inner(registry, object_id, epoch, &mut visited)
+    resolve_global_state_inner(registry, object_id, epoch, &mut visited, None)
+}
+
+pub(crate) fn resolve_global_state_with_spice(
+    registry: &ObjectRegistry,
+    object_id: &str,
+    epoch: &GameTime,
+    spice_provider: &SpiceProvider,
+) -> Result<StateVector, EphemerisError> {
+    let mut visited = HashSet::new();
+    resolve_global_state_inner(
+        registry,
+        object_id,
+        epoch,
+        &mut visited,
+        Some(spice_provider),
+    )
 }
 
 fn resolve_global_state_inner(
@@ -20,6 +36,7 @@ fn resolve_global_state_inner(
     object_id: &str,
     epoch: &GameTime,
     visited: &mut HashSet<String>,
+    spice_provider: Option<&SpiceProvider>,
 ) -> Result<StateVector, EphemerisError> {
     if !visited.insert(object_id.to_string()) {
         return Err(EphemerisError::CyclicDependency(object_id.to_string()));
@@ -38,13 +55,21 @@ fn resolve_global_state_inner(
             epoch.clone(),
             EphemerisQuality::Fictional,
         )),
-        EphemerisSource::SpiceBody { .. } => Err(EphemerisError::Backend(format!(
-            "SPICE provider is not implemented for object {}",
-            object.id
-        ))),
+        EphemerisSource::SpiceBody { .. } => match spice_provider {
+            Some(provider) => provider.state(object, epoch),
+            None => Err(EphemerisError::Backend(format!(
+                "SPICE provider is not configured for object {}",
+                object.id
+            ))),
+        },
         EphemerisSource::BodyFixed { parent, .. } => {
-            let _parent_state =
-                resolve_global_state_inner(registry, parent.as_str(), epoch, visited)?;
+            let _parent_state = resolve_global_state_inner(
+                registry,
+                parent.as_str(),
+                epoch,
+                visited,
+                spice_provider,
+            )?;
             Err(EphemerisError::FrameTransformUnavailable(format!(
                 "body-fixed transforms are not implemented for object {}",
                 object.id
@@ -53,8 +78,13 @@ fn resolve_global_state_inner(
         EphemerisSource::FixedOffset {
             parent, offset_km, ..
         } => {
-            let parent_state =
-                resolve_global_state_inner(registry, parent.as_str(), epoch, visited)?;
+            let parent_state = resolve_global_state_inner(
+                registry,
+                parent.as_str(),
+                epoch,
+                visited,
+                spice_provider,
+            )?;
             let local = StateVector::new(
                 *offset_km,
                 Vec3KmPerSec::ZERO,
@@ -73,8 +103,13 @@ fn resolve_global_state_inner(
             phase_at_epoch_deg,
             epoch: orbit_epoch,
         } => {
-            let parent_state =
-                resolve_global_state_inner(registry, parent.as_str(), epoch, visited)?;
+            let parent_state = resolve_global_state_inner(
+                registry,
+                parent.as_str(),
+                epoch,
+                visited,
+                spice_provider,
+            )?;
             let local = circular_orbit_state(
                 *radius_km,
                 *period_seconds,
@@ -93,8 +128,13 @@ fn resolve_global_state_inner(
             samples,
             interpolation,
         } => {
-            let centre_state =
-                resolve_global_state_inner(registry, centre.as_str(), epoch, visited)?;
+            let centre_state = resolve_global_state_inner(
+                registry,
+                centre.as_str(),
+                epoch,
+                visited,
+                spice_provider,
+            )?;
             let local =
                 sampled_trajectory_state(object_id, frame.clone(), samples, *interpolation, epoch)?;
             Ok(StateVector::combine_parent_local(&centre_state, &local))

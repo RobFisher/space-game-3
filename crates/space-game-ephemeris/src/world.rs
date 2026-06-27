@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::{
-    resolution, EphemerisError, FrameId, GameTime, KernelManifest, ObjectDefinition,
-    ObjectRegistry, ObjectSummary, StateVector, Vec3Km,
+    providers::spice::SpiceProvider, resolution, EphemerisError, FrameId, GameTime, KernelManifest,
+    ObjectDefinition, ObjectRegistry, ObjectSummary, StateVector, Vec3Km,
 };
 
 const SPEED_OF_LIGHT_KM_S: f64 = 299_792.458;
@@ -10,8 +10,10 @@ const SPEED_OF_LIGHT_KM_S: f64 = 299_792.458;
 #[derive(Clone, Debug, Default)]
 pub struct SolarSystemBuilder {
     kernel_dir: Option<PathBuf>,
+    manifest: Option<KernelManifest>,
     manifest_path: Option<PathBuf>,
     object_registry_path: Option<PathBuf>,
+    asset_profile: Option<String>,
     allow_approximate_fallbacks: bool,
     registry: Option<ObjectRegistry>,
 }
@@ -28,6 +30,16 @@ impl SolarSystemBuilder {
 
     pub fn kernel_manifest(mut self, path: impl Into<PathBuf>) -> Self {
         self.manifest_path = Some(path.into());
+        self
+    }
+
+    pub fn kernel_manifest_data(mut self, manifest: KernelManifest) -> Self {
+        self.manifest = Some(manifest);
+        self
+    }
+
+    pub fn asset_profile(mut self, profile: impl Into<String>) -> Self {
+        self.asset_profile = Some(profile.into());
         self
     }
 
@@ -53,16 +65,25 @@ impl SolarSystemBuilder {
             (None, None) => ObjectRegistry::default(),
         };
 
-        let manifest = match self.manifest_path {
-            Some(path) => Some(KernelManifest::from_toml_path(path)?),
-            None => None,
+        let manifest = match (self.manifest, self.manifest_path) {
+            (Some(manifest), _) => Some(manifest),
+            (None, Some(path)) => Some(KernelManifest::from_toml_path(path)?),
+            (None, None) => None,
         };
+
+        let spice_provider = SpiceProvider::new(
+            manifest.clone(),
+            self.kernel_dir.clone(),
+            self.asset_profile.clone(),
+        );
 
         Ok(SolarSystem {
             registry,
             manifest,
             kernel_dir: self.kernel_dir,
+            asset_profile: self.asset_profile,
             allow_approximate_fallbacks: self.allow_approximate_fallbacks,
+            spice_provider,
         })
     }
 }
@@ -72,7 +93,9 @@ pub struct SolarSystem {
     registry: ObjectRegistry,
     manifest: Option<KernelManifest>,
     kernel_dir: Option<PathBuf>,
+    asset_profile: Option<String>,
     allow_approximate_fallbacks: bool,
+    spice_provider: SpiceProvider,
 }
 
 impl SolarSystem {
@@ -81,7 +104,12 @@ impl SolarSystem {
         object: impl AsRef<str>,
         epoch: GameTime,
     ) -> Result<StateVector, EphemerisError> {
-        resolution::resolve_global_state(&self.registry, object.as_ref(), &epoch)
+        resolution::resolve_global_state_with_spice(
+            &self.registry,
+            object.as_ref(),
+            &epoch,
+            &self.spice_provider,
+        )
     }
 
     pub fn state_relative_to(
@@ -140,6 +168,10 @@ impl SolarSystem {
 
     pub fn kernel_dir(&self) -> Option<&PathBuf> {
         self.kernel_dir.as_ref()
+    }
+
+    pub fn asset_profile(&self) -> Option<&str> {
+        self.asset_profile.as_deref()
     }
 
     pub fn allow_approximate_fallbacks(&self) -> bool {

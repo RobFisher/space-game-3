@@ -366,6 +366,110 @@ altitude_km = 0.8
     ));
 }
 
+#[test]
+fn spice_body_resolves_from_local_minimal_profile_when_assets_are_available() {
+    let asset_root = default_asset_root();
+    let manifest_path = asset_root.join("manifest.toml");
+    let manifest = EphemerisAssetManifest::from_toml_path(&manifest_path).unwrap();
+    if let Err(err) = verify_profile_assets(&manifest, "minimal", &asset_root) {
+        eprintln!("skipping local SPICE resolution test: {err}");
+        return;
+    }
+
+    let registry = ObjectRegistry::from_toml_str(
+        r#"
+[[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+[objects.source]
+type = "spice_body"
+naif_id = 399
+name = "EARTH"
+"#,
+    )
+    .unwrap();
+    let world = SolarSystemBuilder::new()
+        .object_registry_data(registry)
+        .kernel_manifest_data(manifest)
+        .kernel_dir(asset_root)
+        .asset_profile("minimal")
+        .build()
+        .unwrap();
+
+    let state = world.state("earth", epoch()).unwrap();
+    assert_eq!(state.frame, FrameId::SolarSystemBarycentricJ2000);
+    assert_eq!(state.quality, EphemerisQuality::RealKernel);
+    assert!(state.position_km.is_finite());
+    assert!(state.velocity_km_s.is_finite());
+    assert!(state.position_km.magnitude() > 1.0);
+
+    let err = world
+        .state(
+            "earth",
+            GameTime::from_utc_iso8601("1800-01-01T00:00:00Z").unwrap(),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        EphemerisError::OutOfCoverage { object, .. } if object == "earth"
+    ));
+}
+
+#[test]
+fn spice_body_reports_missing_required_assets_without_fetching() {
+    let asset_root = tempfile::tempdir().unwrap();
+    let manifest = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+
+[profiles.minimal]
+description = "Fixture profile"
+assets = ["fixture"]
+
+[assets.fixture]
+kind = "spk"
+filename = "missing.bsp"
+source = "fixture"
+url = "file:///tmp/missing.bsp"
+local_path = "kernels/missing.bsp"
+required = true
+
+[[assets.fixture.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+"#,
+    )
+    .unwrap();
+    let registry = ObjectRegistry::from_toml_str(
+        r#"
+[[objects]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+[objects.source]
+type = "spice_body"
+naif_id = 399
+name = "EARTH"
+"#,
+    )
+    .unwrap();
+    let world = SolarSystemBuilder::new()
+        .object_registry_data(registry)
+        .kernel_manifest_data(manifest)
+        .kernel_dir(asset_root.path())
+        .asset_profile("minimal")
+        .build()
+        .unwrap();
+
+    let err = world.state("earth", epoch()).unwrap_err();
+    assert!(
+        matches!(err, EphemerisError::Backend(message) if message.contains("fixture") && message.contains("missing.bsp"))
+    );
+}
+
 fn fixture_asset_manifest() -> EphemerisAssetManifest {
     EphemerisAssetManifest::from_toml_str(
         r#"

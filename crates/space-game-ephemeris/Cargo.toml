@@ -8,6 +8,7 @@ name = "space_game_ephemeris"
 path = "src/lib.rs"
 
 [dependencies]
+anise = { version = "0.10.2", default-features = false }
 chrono = { version = "0.4", features = ["clock", "serde"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

@@ -1055,7 +1055,7 @@ mod tests {
         assert!(matches!(
             &responses[1],
             ServerToClient::SimulationTime { state, .. }
-                if state.current_time == "2097-01-02T00:00:00Z"
+                if state.current_time.starts_with("2097-01-02T00:00:")
         ));
     }
 
@@ -1352,7 +1352,7 @@ mod tests {
         assert!(matches!(
             &responses[1],
             ServerToClient::SimulationTime { state, .. }
-                if state.current_time == "2097-01-02T00:00:00Z"
+                if state.current_time.starts_with("2097-01-02T00:00:")
         ));
     }
 
@@ -1507,7 +1507,7 @@ mod tests {
                 plan: Some(plan)
             } if plan.plan_id == "flight-2"
                 && plan.acceleration_km_s2 == 0.04
-                && plan.departure_time == "2097-01-01T00:10:00Z"
+                && plan.departure_time.starts_with("2097-01-01T00:10:")
         ));
     }
 

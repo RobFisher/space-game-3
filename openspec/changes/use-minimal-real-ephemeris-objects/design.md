@@ -37,9 +37,9 @@ Alternative considered: keep placeholder circular-orbit bodies and only rename `
 
 ### Represent real bodies as `SpiceBody` registry objects
 
-Each real celestial object should be an `EphemerisSource::SpiceBody` with the NAIF id from `data/ephemeris/manifest.toml`. The public `SolarSystem` API should continue returning `StateVector` with `FrameId::SolarSystemBarycentricJ2000` and `EphemerisQuality::RealKernel`.
+Each real celestial object should be an `EphemerisSource::SpiceBody` with a NAIF id supported by the selected local SPK. For bodies where compact `de442s` provides only the planetary-system barycenter rather than the body center, the game-facing object id and display name should remain the planet while the source uses the supported barycenter NAIF id. The public `SolarSystem` API should continue returning `StateVector` with `FrameId::SolarSystemBarycentricJ2000` and `EphemerisQuality::RealKernel`.
 
-Rationale: `SpiceBody` already exists as the intended source variant, and keeping the API stable lets server query code, command handling, and protocol DTOs remain unchanged.
+Rationale: `SpiceBody` already exists as the intended source variant, and keeping the API stable lets server query code, command handling, and protocol DTOs remain unchanged. Using SPK-supported barycenter ids for Mars and the outer planets reflects what `de442s` actually contains while preserving the minimal-profile gameplay object set.
 
 Alternative considered: generate sampled trajectories from the kernels and store them as game-authored data. That would avoid a runtime SPICE dependency but creates stale derived data, larger repo artifacts, and a second source of truth.
 
@@ -84,6 +84,16 @@ Alternative considered: register the ship as another ephemeris object. That woul
 5. Validate with targeted crate tests, server command tests, and `openspec validate --all`.
 
 Rollback is a code/data revert to the previous placeholder registry and unimplemented SPICE behavior. No persisted data migration is required.
+
+## Asset Failure Path
+
+Local verification currently succeeds for `minimal`: `de442s` resolves at `data/ephemeris/kernels/spk/planets/de442s.bsp` and `pck11` resolves at `data/ephemeris/kernels/pck/pck11.pca`. In environments where either file is missing or invalid, the expected user-facing recovery is:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- fetch --profile minimal
+```
+
+The server and ephemeris runtime should report the missing or invalid asset id and resolved path, but should not run this fetch command automatically.
 
 ## Open Questions
 
