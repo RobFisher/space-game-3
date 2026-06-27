@@ -24,3 +24,7 @@ tokio-tungstenite = "0.24"
 tracing = "0.1"
 tui-input = "0.14.0"
 url = "2"
+
+[dev-dependencies]
+axum = "0.7"
+space-server = { path = "../space-server" }

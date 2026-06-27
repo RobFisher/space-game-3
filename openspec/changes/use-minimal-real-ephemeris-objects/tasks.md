@@ -27,8 +27,8 @@
 
 ## 5. Docs and Validation
 
-- [ ] 5.1 Update README text and examples that describe fictional solar-system objects so they explain the real `minimal` profile requirement and explicit asset fetch flow.
-- [ ] 5.2 Run targeted tests for `space-game-ephemeris` and `space-server`.
-- [ ] 5.3 Run relevant plain-client smoke checks against the local server when local `minimal` assets are available.
-- [ ] 5.4 Run `openspec validate --all`.
-- [ ] 5.5 Commit the completed implementation, tests, docs, and updated OpenSpec task checkboxes in focused chunks.
+- [x] 5.1 Update README text and examples that describe fictional solar-system objects so they explain the real `minimal` profile requirement and explicit asset fetch flow.
+- [x] 5.2 Run targeted tests for `space-game-ephemeris` and `space-server`.
+- [x] 5.3 Run relevant plain-client smoke checks against the local server when local `minimal` assets are available.
+- [x] 5.4 Run `openspec validate --all`.
+- [x] 5.5 Commit the completed implementation, tests, docs, and updated OpenSpec task checkboxes in focused chunks.

@@ -1849,6 +1849,7 @@ checksum = "5dd1c9b1b5d34e1e949deb0dac9ad612e20746c59eaa737e52fd29703c19ec5c"
 name = "space-client-tui"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "color-eyre",
  "crossterm",
@@ -1856,6 +1857,7 @@ dependencies = [
  "ratatui",
  "serde_json",
  "space-game-protocol",
+ "space-server",
  "tokio",
  "tokio-tungstenite",
  "tracing",

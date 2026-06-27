@@ -6,12 +6,15 @@ A Rust TUI space-game prototype organized as a monorepo workspace.
 
 The current build is a minimal networked vertical slice rather than a full game. It has:
 
-- a reusable ephemeris library for fictional solar-system objects,
+- a reusable ephemeris library for real local `minimal` profile ephemeris objects plus game-authored fictional objects,
 - a local authoritative WebSocket server,
 - a shared JSON client/server protocol,
 - and a Ratatui TUI client.
 
-The demo lets a client connect to the local server, list fictional solar-system objects, query distances from the player ship, create/cancel a basic flight plan to a known object, view ship/game-time status, rename the ship for the current server run, and exit cleanly.
+The demo lets a client connect to the local server, list real minimal-profile
+celestial objects plus fictional stations, query distances from the player ship,
+create/cancel a basic flight plan to a known object, view ship/game-time status,
+rename the ship for the current server run, and exit cleanly.
 
 Supported TUI commands include:
 
@@ -84,6 +87,13 @@ Run the local server in one terminal:
 cargo run -p space-server
 ```
 
+The default server world uses the `minimal` ephemeris profile. If the profile
+assets are missing or invalid, fetch them explicitly first:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- fetch --profile minimal
+```
+
 Run the TUI client in another terminal:
 
 ```sh
@@ -118,6 +128,13 @@ cargo run -p space-game
 Real ephemeris files are described by the checked-in manifest at
 `data/ephemeris/manifest.toml`. Downloaded kernels are stored under
 `data/ephemeris/kernels/` by default and are ignored by git.
+
+The server's default object registry uses valid local `minimal` profile assets
+for Sun, Mercury, Venus, Earth, Moon, Mars, Jupiter, Saturn, Uranus, Neptune,
+and Pluto. Fictional stations remain game-authored objects parented to those
+real celestial objects. The compact `de442s` kernel represents some planets via
+planetary-system barycenters internally, while keeping the game-facing object
+ids and names as the planets.
 
 List the assets selected by a profile:
 
