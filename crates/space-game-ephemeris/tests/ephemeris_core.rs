@@ -1,7 +1,8 @@
 use space_game_ephemeris::{
-    default_asset_root, fetch_profile_assets, resolve_asset_path, verify_profile_assets,
-    AssetVerificationStatus, EphemerisAssetManifest, EphemerisError, EphemerisQuality, FrameId,
-    GameTime, ObjectKind, ObjectRegistry, SolarSystemBuilder, StateVector, Vec3Km, Vec3KmPerSec,
+    default_asset_root, downloaded_profile_objects, fetch_profile_assets, resolve_asset_path,
+    verify_profile_assets, AssetVerificationStatus, EphemerisAssetManifest, EphemerisError,
+    EphemerisQuality, FrameId, GameTime, ObjectKind, ObjectRegistry, SkippedAssetReason,
+    SolarSystemBuilder, StateVector, Vec3Km, Vec3KmPerSec,
 };
 use std::fs;
 
@@ -378,6 +379,10 @@ assets = ["fixture"]
 description = "Optional profile"
 assets = ["optional"]
 
+[profiles.mixed]
+description = "Mixed profile"
+assets = ["fixture", "optional", "metadata"]
+
 [assets.fixture]
 kind = "spk"
 filename = "fixture.bsp"
@@ -389,12 +394,39 @@ size_bytes = 14
 required = true
 description = "Fixture asset"
 
+[[assets.fixture.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+notes = "Fixture coverage"
+
+[[assets.fixture.covers]]
+id = "moon"
+name = "Moon"
+kind = "moon"
+naif_id = 301
+
 [assets.optional]
 kind = "spk"
 filename = "optional.bsp"
 source = "fixture"
 url = "file:///tmp/optional.bsp"
 local_path = "kernels/optional.bsp"
+required = false
+
+[[assets.optional.covers]]
+id = "phobos"
+name = "Phobos"
+kind = "moon"
+naif_id = 401
+
+[assets.metadata]
+kind = "anise-pca"
+filename = "metadata.pca"
+source = "fixture"
+url = "file:///tmp/metadata.pca"
+local_path = "kernels/metadata.pca"
 required = false
 "#,
     )
@@ -409,6 +441,10 @@ fn ephemeris_asset_manifest_parses_selects_profiles_and_rejects_invalid_data() {
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].id, "fixture");
     assert!(selected[0].asset.required);
+    assert_eq!(selected[0].asset.covers.len(), 2);
+    assert_eq!(selected[0].asset.covers[0].id.as_str(), "earth");
+    assert_eq!(selected[0].asset.covers[0].kind, ObjectKind::Planet);
+    assert_eq!(selected[0].asset.covers[0].naif_id, Some(399));
 
     assert!(matches!(
         manifest.profile_assets("missing"),
@@ -475,6 +511,68 @@ local_path = "kernels/fixture.bsp"
         duplicate_profile_asset,
         Err(EphemerisError::InvalidObjectDefinition(_))
     ));
+
+    let invalid_coverage = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+[profiles.bad]
+description = "Bad"
+assets = ["fixture"]
+
+[assets.fixture]
+kind = "spk"
+filename = "fixture.bsp"
+source = "fixture"
+url = "file:///tmp/fixture.bsp"
+local_path = "kernels/fixture.bsp"
+
+[[assets.fixture.covers]]
+id = ""
+name = "No Id"
+kind = "planet"
+"#,
+    );
+    assert!(matches!(
+        invalid_coverage,
+        Err(EphemerisError::InvalidObjectDefinition(_))
+    ));
+
+    let conflicting_coverage = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+[profiles.bad]
+description = "Bad"
+assets = ["first", "second"]
+
+[assets.first]
+kind = "spk"
+filename = "first.bsp"
+source = "fixture"
+url = "file:///tmp/first.bsp"
+local_path = "kernels/first.bsp"
+
+[[assets.first.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+
+[assets.second]
+kind = "spk"
+filename = "second.bsp"
+source = "fixture"
+url = "file:///tmp/second.bsp"
+local_path = "kernels/second.bsp"
+
+[[assets.second.covers]]
+id = "earth"
+name = "Terra"
+kind = "planet"
+"#,
+    );
+    assert!(matches!(
+        conflicting_coverage,
+        Err(EphemerisError::InvalidObjectDefinition(_))
+    ));
 }
 
 #[test]
@@ -509,6 +607,119 @@ fn asset_paths_and_offline_verification_report_clear_results() {
 
     let optional = verify_profile_assets(&manifest, "optional", root).unwrap();
     assert_eq!(optional[0].status, AssetVerificationStatus::OptionalMissing);
+}
+
+#[test]
+fn downloaded_object_listing_uses_only_valid_local_assets() {
+    let manifest = fixture_asset_manifest();
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let fixture_path = root.join("kernels/fixture.bsp");
+    let metadata_path = root.join("kernels/metadata.pca");
+    fs::create_dir_all(fixture_path.parent().unwrap()).unwrap();
+    fs::write(&fixture_path, b"fixture asset\n").unwrap();
+    fs::write(&metadata_path, b"metadata\n").unwrap();
+
+    let listed = downloaded_profile_objects(&manifest, "mixed", root).unwrap();
+
+    assert_eq!(listed.objects.len(), 2);
+    assert_eq!(listed.objects[0].object.id.as_str(), "earth");
+    assert_eq!(listed.objects[0].object.name, "Earth");
+    assert_eq!(listed.objects[0].source_asset_id, "fixture");
+    assert_eq!(listed.objects[1].object.id.as_str(), "moon");
+    assert_eq!(listed.skipped_assets.len(), 2);
+    assert!(listed
+        .skipped_assets
+        .iter()
+        .any(|asset| asset.id == "optional" && asset.reason == SkippedAssetReason::Missing));
+    assert!(listed
+        .skipped_assets
+        .iter()
+        .any(|asset| asset.id == "metadata" && asset.reason == SkippedAssetReason::NoCoverage));
+}
+
+#[test]
+fn downloaded_object_listing_reports_invalid_assets_and_deduplicates_objects() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let first_path = root.join("kernels/first.bsp");
+    let second_path = root.join("kernels/second.bsp");
+    let bad_path = root.join("kernels/bad.bsp");
+    fs::create_dir_all(first_path.parent().unwrap()).unwrap();
+    fs::write(&first_path, b"fixture asset\n").unwrap();
+    fs::write(&second_path, b"fixture asset\n").unwrap();
+    fs::write(&bad_path, b"wrong\n").unwrap();
+
+    let manifest = EphemerisAssetManifest::from_toml_str(
+        r#"
+version = 1
+
+[profiles.dedup]
+description = "Dedup profile"
+assets = ["first", "second", "bad"]
+
+[assets.first]
+kind = "spk"
+filename = "first.bsp"
+source = "fixture"
+url = "file:///tmp/first.bsp"
+local_path = "kernels/first.bsp"
+sha256 = "f0dad327e22e8cddc2e8057cf16d9b16ea6e36e87d31f46ee4d5943c69609c4f"
+size_bytes = 14
+required = true
+
+[[assets.first.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+
+[assets.second]
+kind = "spk"
+filename = "second.bsp"
+source = "fixture"
+url = "file:///tmp/second.bsp"
+local_path = "kernels/second.bsp"
+sha256 = "f0dad327e22e8cddc2e8057cf16d9b16ea6e36e87d31f46ee4d5943c69609c4f"
+size_bytes = 14
+required = true
+
+[[assets.second.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+
+[assets.bad]
+kind = "spk"
+filename = "bad.bsp"
+source = "fixture"
+url = "file:///tmp/bad.bsp"
+local_path = "kernels/bad.bsp"
+sha256 = "f0dad327e22e8cddc2e8057cf16d9b16ea6e36e87d31f46ee4d5943c69609c4f"
+size_bytes = 14
+required = true
+
+[[assets.bad.covers]]
+id = "mars"
+name = "Mars"
+kind = "planet"
+naif_id = 499
+"#,
+    )
+    .unwrap();
+
+    let listed = downloaded_profile_objects(&manifest, "dedup", root).unwrap();
+
+    assert_eq!(listed.objects.len(), 1);
+    assert_eq!(listed.objects[0].object.id.as_str(), "earth");
+    assert_eq!(listed.objects[0].source_asset_id, "first");
+    assert_eq!(listed.skipped_assets.len(), 1);
+    assert_eq!(listed.skipped_assets[0].id, "bad");
+    assert!(matches!(
+        &listed.skipped_assets[0].reason,
+        SkippedAssetReason::Invalid(reason) if reason.contains("size mismatch")
+    ));
 }
 
 #[test]

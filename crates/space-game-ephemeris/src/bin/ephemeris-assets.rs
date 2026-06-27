@@ -1,6 +1,7 @@
 use space_game_ephemeris::{
-    fetch_profile_assets, resolve_asset_path, resolved_asset_root, verify_profile_assets,
-    AssetVerificationStatus, EphemerisAssetManifest, ASSET_ROOT_ENV,
+    downloaded_profile_objects, fetch_profile_assets, resolve_asset_path, resolved_asset_root,
+    verify_profile_assets, AssetVerificationStatus, EphemerisAssetManifest, SkippedAssetReason,
+    ASSET_ROOT_ENV,
 };
 use std::env;
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ fn run() -> Result<(), String> {
         Command::List => list_assets(&manifest, &args.profile, &root),
         Command::Verify => verify_assets(&manifest, &args.profile, &root),
         Command::Fetch { force } => fetch_assets(&manifest, &args.profile, &root, force),
+        Command::Objects => list_downloaded_objects(&manifest, &args.profile, &root),
     }
 }
 
@@ -101,6 +103,52 @@ fn fetch_assets(
     Ok(())
 }
 
+fn list_downloaded_objects(
+    manifest: &EphemerisAssetManifest,
+    profile: &str,
+    root: &PathBuf,
+) -> Result<(), String> {
+    let inventory =
+        downloaded_profile_objects(manifest, profile, root).map_err(|error| error.to_string())?;
+
+    println!("profile: {}", profile);
+    println!("asset root: {}", root.display());
+    println!("downloaded objects:");
+    for object in inventory.objects {
+        let naif = object
+            .object
+            .naif_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        println!(
+            "{}\t{}\t{:?}\t{}\t{}",
+            object.object.id, object.object.name, object.object.kind, object.source_asset_id, naif
+        );
+    }
+
+    if !inventory.skipped_assets.is_empty() {
+        println!("skipped assets:");
+        for asset in inventory.skipped_assets {
+            println!(
+                "{}\t{}\t{}",
+                asset.id,
+                asset.path.display(),
+                skipped_reason(&asset.reason)
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn skipped_reason(reason: &SkippedAssetReason) -> String {
+    match reason {
+        SkippedAssetReason::Missing => "missing".to_string(),
+        SkippedAssetReason::Invalid(error) => format!("invalid: {}", error),
+        SkippedAssetReason::NoCoverage => "no coverage metadata".to_string(),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct Args {
     command: Command,
@@ -114,6 +162,7 @@ enum Command {
     List,
     Verify,
     Fetch { force: bool },
+    Objects,
 }
 
 impl Args {
@@ -126,6 +175,7 @@ impl Args {
             Some("list") => Command::List,
             Some("verify") => Command::Verify,
             Some("fetch") => Command::Fetch { force: false },
+            Some("objects") => Command::Objects,
             Some("--help") | Some("-h") | None => return Err(usage()),
             Some(other) => return Err(format!("unknown command {}\n{}", other, usage())),
         };
@@ -170,7 +220,7 @@ impl Args {
 
 fn usage() -> String {
     format!(
-        "usage: ephemeris-assets <list|verify|fetch> [--profile NAME] [--manifest PATH] [--asset-root PATH] [--force]\n\
+        "usage: ephemeris-assets <list|verify|fetch|objects> [--profile NAME] [--manifest PATH] [--asset-root PATH] [--force]\n\
          default manifest: {}\n\
          default profile: {}\n\
          asset root override env: {}",

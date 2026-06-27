@@ -131,6 +131,12 @@ Verify local files without downloading anything:
 cargo run -p space-game-ephemeris --bin ephemeris-assets -- verify --profile minimal
 ```
 
+List celestial objects covered by downloaded, valid files for a profile:
+
+```sh
+cargo run -p space-game-ephemeris --bin ephemeris-assets -- objects --profile minimal
+```
+
 Fetch missing or invalid files explicitly:
 
 ```sh

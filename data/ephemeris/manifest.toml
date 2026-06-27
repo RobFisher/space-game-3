@@ -21,6 +21,72 @@ required = true
 description = "Compact JPL planetary/lunar ephemeris. Good default for game development."
 source_notes = "NASA NAIF generic kernels."
 
+[[assets.de442s.covers]]
+id = "sun"
+name = "Sun"
+kind = "star"
+naif_id = 10
+
+[[assets.de442s.covers]]
+id = "mercury"
+name = "Mercury"
+kind = "planet"
+naif_id = 199
+
+[[assets.de442s.covers]]
+id = "venus"
+name = "Venus"
+kind = "planet"
+naif_id = 299
+
+[[assets.de442s.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+
+[[assets.de442s.covers]]
+id = "moon"
+name = "Moon"
+kind = "moon"
+naif_id = 301
+
+[[assets.de442s.covers]]
+id = "mars"
+name = "Mars"
+kind = "planet"
+naif_id = 499
+
+[[assets.de442s.covers]]
+id = "jupiter"
+name = "Jupiter"
+kind = "planet"
+naif_id = 599
+
+[[assets.de442s.covers]]
+id = "saturn"
+name = "Saturn"
+kind = "planet"
+naif_id = 699
+
+[[assets.de442s.covers]]
+id = "uranus"
+name = "Uranus"
+kind = "planet"
+naif_id = 799
+
+[[assets.de442s.covers]]
+id = "neptune"
+name = "Neptune"
+kind = "planet"
+naif_id = 899
+
+[[assets.de442s.covers]]
+id = "pluto"
+name = "Pluto"
+kind = "dwarf_planet"
+naif_id = 999
+
 [assets.de442]
 kind = "spk"
 filename = "de442.bsp"
@@ -32,6 +98,72 @@ required = false
 description = "Larger DE442 planetary/lunar ephemeris."
 source_notes = "NASA NAIF generic kernels."
 
+[[assets.de442.covers]]
+id = "sun"
+name = "Sun"
+kind = "star"
+naif_id = 10
+
+[[assets.de442.covers]]
+id = "mercury"
+name = "Mercury"
+kind = "planet"
+naif_id = 199
+
+[[assets.de442.covers]]
+id = "venus"
+name = "Venus"
+kind = "planet"
+naif_id = 299
+
+[[assets.de442.covers]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+naif_id = 399
+
+[[assets.de442.covers]]
+id = "moon"
+name = "Moon"
+kind = "moon"
+naif_id = 301
+
+[[assets.de442.covers]]
+id = "mars"
+name = "Mars"
+kind = "planet"
+naif_id = 499
+
+[[assets.de442.covers]]
+id = "jupiter"
+name = "Jupiter"
+kind = "planet"
+naif_id = 599
+
+[[assets.de442.covers]]
+id = "saturn"
+name = "Saturn"
+kind = "planet"
+naif_id = 699
+
+[[assets.de442.covers]]
+id = "uranus"
+name = "Uranus"
+kind = "planet"
+naif_id = 799
+
+[[assets.de442.covers]]
+id = "neptune"
+name = "Neptune"
+kind = "planet"
+naif_id = 899
+
+[[assets.de442.covers]]
+id = "pluto"
+name = "Pluto"
+kind = "dwarf_planet"
+naif_id = 999
+
 [assets.mar099s]
 kind = "spk"
 filename = "mar099s.bsp"
@@ -42,6 +174,18 @@ approx_size = "64M"
 required = false
 description = "Compact Mars satellite ephemeris for Phobos and Deimos."
 source_notes = "NASA NAIF generic kernels."
+
+[[assets.mar099s.covers]]
+id = "phobos"
+name = "Phobos"
+kind = "moon"
+naif_id = 401
+
+[[assets.mar099s.covers]]
+id = "deimos"
+name = "Deimos"
+kind = "moon"
+naif_id = 402
 
 [assets.pck11]
 kind = "anise-pca"
