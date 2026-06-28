@@ -1535,10 +1535,20 @@ mod tests {
         let arrival = GameTime::from_utc_iso8601(&plan.arrival_time)
             .unwrap()
             .add_seconds(1.0);
-        let completed = service.ship_state(arrival.clone()).unwrap();
+        let entering = service.ship_state(arrival).unwrap();
+        assert_eq!(entering.motion_mode, "entering_orbit");
+
+        let orbit_entry_time = service
+            .player_ship()
+            .active_flight_plan()
+            .unwrap()
+            .orbit_entry_time
+            .clone();
+        let completed_at = orbit_entry_time.add_seconds(1.0);
+        let completed = service.ship_state(completed_at.clone()).unwrap();
         assert_eq!(completed.motion_mode, "orbiting");
 
-        let arrived_distance = service.distance_to("mars", arrival).unwrap();
+        let arrived_distance = service.distance_to("mars", completed_at).unwrap();
         assert!(arrived_distance.distance_km < before_arrival);
     }
 }

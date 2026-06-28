@@ -9,12 +9,12 @@
 
 ## 2. Flight Plan Model and State Resolution
 
-- [ ] 2.1 Extend the flight plan model with arrival orbit request, resolved orbit estimate, transfer arrival time, orbit entry completion time, navigation phase, and acceleration-in-G display metadata.
-- [ ] 2.2 Move transfer duration/interpolation and intercept planning into the navigation module while preserving deterministic behavior.
-- [ ] 2.3 Change object-target planning to snapshot an orbital insertion state on the requested arrival orbit instead of the destination object center.
-- [ ] 2.4 Implement `entering_orbit` state resolution that blends from transfer endpoint to circular orbit state.
-- [ ] 2.5 Update player ship state resolution to report `flight_plan`, `entering_orbit`, and `orbiting` phases at the correct times.
-- [ ] 2.6 Add focused tests for insertion-state planning, explicit-time queries, orbit-entry resolution, and completed handoff to orbiting motion.
+- [x] 2.1 Extend the flight plan model with arrival orbit request, resolved orbit estimate, transfer arrival time, orbit entry completion time, navigation phase, and acceleration-in-G display metadata.
+- [x] 2.2 Move transfer duration/interpolation and intercept planning into the navigation module while preserving deterministic behavior.
+- [x] 2.3 Change object-target planning to snapshot an orbital insertion state on the requested arrival orbit instead of the destination object center.
+- [x] 2.4 Implement `entering_orbit` state resolution that blends from transfer endpoint to circular orbit state.
+- [x] 2.5 Update player ship state resolution to report `flight_plan`, `entering_orbit`, and `orbiting` phases at the correct times.
+- [x] 2.6 Add focused tests for insertion-state planning, explicit-time queries, orbit-entry resolution, and completed handoff to orbiting motion.
 
 ## 3. Protocol and Server Commands
 

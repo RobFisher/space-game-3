@@ -5,6 +5,12 @@ use space_game_ephemeris::{
 };
 use thiserror::Error;
 
+use crate::navigation::{
+    blend_states, circular_orbit_local_state, transfer_state_between,
+    validate_acceleration as validate_navigation_acceleration, ArrivalOrbitRequest,
+    NavigationError, ResolvedArrivalOrbit, DEFAULT_ORBIT_ENTRY_DURATION_SECONDS,
+};
+
 pub const DEFAULT_SHIP_ID: &str = "player-ship";
 pub const DEFAULT_SHIP_NAME: &str = "Wayfarer";
 pub const DEFAULT_SHIP_PARENT_ID: &str = "earth";
@@ -44,8 +50,13 @@ pub struct FlightPlan {
     pub target: FlightPlanTarget,
     pub departure_time: GameTime,
     pub arrival_time: GameTime,
+    pub orbit_entry_time: GameTime,
     pub duration_seconds: f64,
     pub acceleration_km_s2: f64,
+    pub acceleration_g: Option<f64>,
+    pub arrival_orbit_request: ArrivalOrbitRequest,
+    pub arrival_orbit: ResolvedArrivalOrbit,
+    pub orbit_entry_duration_seconds: f64,
     pub status: FlightPlanStatus,
 }
 
@@ -84,6 +95,8 @@ pub enum ShipNameError {
 pub enum FlightPlanError {
     #[error("invalid acceleration: {0}")]
     InvalidAcceleration(f64),
+    #[error(transparent)]
+    Navigation(#[from] NavigationError),
 }
 
 impl PlayerShip {
@@ -171,8 +184,12 @@ impl PlayerShip {
         target: FlightPlanTarget,
         departure_time: GameTime,
         arrival_time: GameTime,
+        orbit_entry_time: GameTime,
         duration_seconds: f64,
         acceleration_km_s2: f64,
+        acceleration_g: Option<f64>,
+        arrival_orbit_request: ArrivalOrbitRequest,
+        arrival_orbit: ResolvedArrivalOrbit,
     ) -> Result<FlightPlan, FlightPlanError> {
         validate_acceleration(acceleration_km_s2)?;
         let plan = FlightPlan {
@@ -182,8 +199,13 @@ impl PlayerShip {
             target,
             departure_time,
             arrival_time,
+            orbit_entry_time,
             duration_seconds,
             acceleration_km_s2,
+            acceleration_g,
+            arrival_orbit_request,
+            arrival_orbit,
+            orbit_entry_duration_seconds: DEFAULT_ORBIT_ENTRY_DURATION_SECONDS,
             status: FlightPlanStatus::Active,
         };
         self.next_flight_plan_number += 1;
@@ -214,21 +236,53 @@ impl PlayerShip {
         at: GameTime,
         parent_state: StateVector,
     ) -> ResolvedShipState {
-        let motion = OrbitingMotion {
-            parent_object_id: plan.target.object_id().clone(),
-            radius_km: DEFAULT_SHIP_ORBIT_RADIUS_KM,
-            period_seconds: DEFAULT_SHIP_ORBIT_PERIOD_SECONDS,
-            phase_radians: 0.0,
-            epoch: plan.arrival_time.clone(),
-            quality: EphemerisQuality::Fictional,
-        };
-        let local_state = motion.local_state_at(at);
+        let parent_object_id = plan.target.object_id().clone();
+        let local_state = circular_orbit_local_state(
+            &parent_object_id,
+            &plan.arrival_orbit,
+            at,
+            &plan.arrival_time,
+            0.0,
+            EphemerisQuality::Fictional,
+        );
         ResolvedShipState {
             ship_id: self.id.clone(),
             display_name: self.display_name.clone(),
             motion_mode: "orbiting".to_string(),
-            parent_object_id: Some(motion.parent_object_id),
+            parent_object_id: Some(parent_object_id),
             state: StateVector::combine_parent_local(&parent_state, &local_state),
+        }
+    }
+
+    pub fn resolve_entering_orbit_state(
+        &self,
+        plan: &FlightPlan,
+        at: GameTime,
+        parent_state: StateVector,
+    ) -> ResolvedShipState {
+        let parent_object_id = plan.target.object_id().clone();
+        let local_state = circular_orbit_local_state(
+            &parent_object_id,
+            &plan.arrival_orbit,
+            at.clone(),
+            &plan.arrival_time,
+            0.0,
+            EphemerisQuality::Fictional,
+        );
+        let orbit_state = StateVector::combine_parent_local(&parent_state, &local_state);
+        let mut insertion_state = plan.target_state().clone();
+        insertion_state.epoch = at.clone();
+        let progress = if plan.orbit_entry_duration_seconds <= 0.0 {
+            1.0
+        } else {
+            at.seconds_since(&plan.arrival_time) / plan.orbit_entry_duration_seconds
+        };
+        ResolvedShipState {
+            ship_id: self.id.clone(),
+            display_name: self.display_name.clone(),
+            motion_mode: "entering_orbit".to_string(),
+            parent_object_id: Some(parent_object_id),
+            state: blend_states(&insertion_state, &orbit_state, progress, at),
         }
     }
 }
@@ -255,7 +309,7 @@ impl OrbitingMotion {
 
 impl FlightPlan {
     pub fn effective_status_at(&self, at: &GameTime) -> FlightPlanStatus {
-        if self.status == FlightPlanStatus::Active && at >= &self.arrival_time {
+        if self.status == FlightPlanStatus::Active && at >= &self.orbit_entry_time {
             FlightPlanStatus::Completed
         } else {
             self.status
@@ -269,33 +323,13 @@ impl FlightPlan {
     }
 
     fn transfer_state_at(&self, at: GameTime) -> StateVector {
-        if at <= self.departure_time {
-            let mut state = self.origin_state.clone();
-            state.epoch = at;
-            return state;
-        }
-        if at >= self.arrival_time || self.duration_seconds <= 0.0 {
-            let mut state = self.target_state().clone();
-            state.epoch = at;
-            return state;
-        }
-
-        let normalized =
-            (at.seconds_since(&self.departure_time) / self.duration_seconds).clamp(0.0, 1.0);
-        let progress = ease_in_out_accel_decel(normalized);
-        let velocity_factor =
-            ease_in_out_accel_decel_derivative(normalized) / self.duration_seconds;
-        let delta = self.target_state().position_km - self.origin_state.position_km;
-        StateVector::new(
-            self.origin_state.position_km + delta * progress,
-            Vec3KmPerSec::new(
-                delta.x * velocity_factor,
-                delta.y * velocity_factor,
-                delta.z * velocity_factor,
-            ),
-            self.origin_state.frame.clone(),
+        transfer_state_between(
+            &self.origin_state,
+            self.target_state(),
+            &self.departure_time,
+            &self.arrival_time,
+            self.duration_seconds,
             at,
-            self.target_state().quality,
         )
     }
 }
@@ -309,40 +343,18 @@ impl FlightPlanTarget {
 }
 
 pub fn validate_acceleration(acceleration_km_s2: f64) -> Result<(), FlightPlanError> {
-    if acceleration_km_s2.is_finite() && acceleration_km_s2 > 0.0 {
-        Ok(())
-    } else {
-        Err(FlightPlanError::InvalidAcceleration(acceleration_km_s2))
-    }
-}
-
-pub fn transfer_duration_seconds(distance_km: f64, acceleration_km_s2: f64) -> f64 {
-    if distance_km <= 0.0 {
-        0.0
-    } else {
-        2.0 * (distance_km / acceleration_km_s2).sqrt()
-    }
-}
-
-fn ease_in_out_accel_decel(normalized: f64) -> f64 {
-    if normalized < 0.5 {
-        2.0 * normalized * normalized
-    } else {
-        1.0 - 2.0 * (1.0 - normalized) * (1.0 - normalized)
-    }
-}
-
-fn ease_in_out_accel_decel_derivative(normalized: f64) -> f64 {
-    if normalized < 0.5 {
-        4.0 * normalized
-    } else {
-        4.0 * (1.0 - normalized)
-    }
+    validate_navigation_acceleration(acceleration_km_s2).map_err(|err| match err {
+        NavigationError::InvalidAcceleration(value) => FlightPlanError::InvalidAcceleration(value),
+        other => FlightPlanError::Navigation(other),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::navigation::{
+        transfer_duration_seconds, ArrivalOrbitKind, ArrivalOrbitRequest, ResolvedArrivalOrbit,
+    };
 
     fn epoch() -> GameTime {
         GameTime::from_utc_iso8601("2097-01-01T00:00:00Z").unwrap()
@@ -414,8 +426,19 @@ mod tests {
             },
             departure_time: start.clone(),
             arrival_time: arrival.clone(),
+            orbit_entry_time: arrival.add_seconds(DEFAULT_ORBIT_ENTRY_DURATION_SECONDS),
             duration_seconds: 10.0,
             acceleration_km_s2: 2.0,
+            acceleration_g: None,
+            arrival_orbit_request: ArrivalOrbitRequest::Default,
+            arrival_orbit: ResolvedArrivalOrbit {
+                kind: ArrivalOrbitKind::Default,
+                radius_km: DEFAULT_SHIP_ORBIT_RADIUS_KM,
+                altitude_km: None,
+                period_seconds: Some(DEFAULT_SHIP_ORBIT_PERIOD_SECONDS),
+                circular_speed_km_s: None,
+            },
+            orbit_entry_duration_seconds: DEFAULT_ORBIT_ENTRY_DURATION_SECONDS,
             status: FlightPlanStatus::Active,
         };
 

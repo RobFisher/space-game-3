@@ -10,9 +10,14 @@ use space_game_protocol::{
 };
 use thiserror::Error;
 
+use crate::navigation::{
+    constants_for_object, orbit_insertion_state, resolve_arrival_orbit, transfer_duration_seconds,
+    ArrivalOrbitRequest, NavigationError, ResolvedArrivalOrbit,
+    DEFAULT_ORBIT_ENTRY_DURATION_SECONDS,
+};
 use crate::ship::{
-    transfer_duration_seconds, validate_acceleration, FlightPlan, FlightPlanError,
-    FlightPlanStatus, FlightPlanTarget, PlayerShip, ResolvedShipState, ShipNameError,
+    validate_acceleration, FlightPlan, FlightPlanError, FlightPlanStatus, FlightPlanTarget,
+    PlayerShip, ResolvedShipState, ShipNameError, DEFAULT_SHIP_ORBIT_RADIUS_KM,
 };
 
 pub const AU_KM: f64 = 149_597_870.7;
@@ -43,6 +48,8 @@ pub enum QueryError {
     Ephemeris(#[from] EphemerisError),
     #[error(transparent)]
     FlightPlan(#[from] FlightPlanError),
+    #[error(transparent)]
+    Navigation(#[from] NavigationError),
 }
 
 impl QueryError {
@@ -53,6 +60,15 @@ impl QueryError {
             Self::IncompatibleFrame { .. } => "incompatible_frame",
             Self::Ephemeris(_) => "ephemeris_error",
             Self::FlightPlan(_) => "invalid_acceleration",
+            Self::Navigation(NavigationError::InvalidAcceleration(_)) => "invalid_acceleration",
+            Self::Navigation(NavigationError::InvalidOrbitValue(_)) => "invalid_orbit",
+            Self::Navigation(NavigationError::UnsupportedStationaryOrbit(_)) => {
+                "unsupported_stationary_orbit"
+            }
+            Self::Navigation(NavigationError::MissingBodyRadius(_)) => "missing_body_radius",
+            Self::Navigation(NavigationError::InvalidSpecificImpulse(_)) => {
+                "invalid_specific_impulse"
+            }
         };
         ErrorDto {
             code: code.to_string(),
@@ -101,6 +117,12 @@ impl SolarSystemQueryService {
             if at < plan.arrival_time {
                 return Ok(ship.resolve_flight_plan_state(plan, at));
             }
+            if at < plan.orbit_entry_time {
+                let target_state = self
+                    .world
+                    .state(plan.target.object_id().as_str(), at.clone())?;
+                return Ok(ship.resolve_entering_orbit_state(plan, at, target_state));
+            }
             let target_state = self
                 .world
                 .state(plan.target.object_id().as_str(), at.clone())?;
@@ -121,15 +143,35 @@ impl SolarSystemQueryService {
         departure_time: GameTime,
         acceleration_km_s2: f64,
     ) -> Result<FlightPlanDto, QueryError> {
+        self.create_flight_plan_with_options(
+            object_query,
+            departure_time,
+            acceleration_km_s2,
+            None,
+            ArrivalOrbitRequest::Default,
+        )
+    }
+
+    pub fn create_flight_plan_with_options(
+        &self,
+        object_query: &str,
+        departure_time: GameTime,
+        acceleration_km_s2: f64,
+        acceleration_g: Option<f64>,
+        arrival_orbit_request: ArrivalOrbitRequest,
+    ) -> Result<FlightPlanDto, QueryError> {
         validate_acceleration(acceleration_km_s2)?;
         let target = self.resolve_object(object_query)?;
         let origin_state = self.player_ship_state(departure_time.clone())?.state;
-        let (arrival_time, arrival_state, duration_seconds) = self.estimate_object_intercept(
-            &target,
-            &origin_state,
-            &departure_time,
-            acceleration_km_s2,
-        )?;
+        let (arrival_time, arrival_state, duration_seconds, arrival_orbit) = self
+            .estimate_object_intercept(
+                &target,
+                &origin_state,
+                &departure_time,
+                acceleration_km_s2,
+                &arrival_orbit_request,
+            )?;
+        let orbit_entry_time = arrival_time.add_seconds(DEFAULT_ORBIT_ENTRY_DURATION_SECONDS);
         let mut ship = self.player_ship.write().expect("player ship lock poisoned");
         let plan = ship.register_flight_plan(
             origin_state,
@@ -140,8 +182,12 @@ impl SolarSystemQueryService {
             },
             departure_time.clone(),
             arrival_time,
+            orbit_entry_time,
             duration_seconds,
             acceleration_km_s2,
+            acceleration_g,
+            arrival_orbit_request,
+            arrival_orbit,
         )?;
         Ok(flight_plan_to_dto(&plan, &departure_time))
     }
@@ -293,30 +339,53 @@ impl SolarSystemQueryService {
         origin_state: &StateVector,
         departure_time: &GameTime,
         acceleration_km_s2: f64,
-    ) -> Result<(GameTime, StateVector, f64), QueryError> {
+        arrival_orbit_request: &ArrivalOrbitRequest,
+    ) -> Result<(GameTime, StateVector, f64, ResolvedArrivalOrbit), QueryError> {
+        let metadata = self.world.object_metadata(object.id.as_str())?;
+        let constants = constants_for_object(&metadata);
+        let arrival_orbit = resolve_arrival_orbit(
+            &object.id,
+            constants,
+            arrival_orbit_request,
+            DEFAULT_SHIP_ORBIT_RADIUS_KM,
+        )?;
         let mut target_state = self
             .world
             .state(object.id.as_str(), departure_time.clone())?;
+        let mut arrival_state = orbit_insertion_state(
+            &target_state,
+            &object.id,
+            &arrival_orbit,
+            departure_time.clone(),
+            EphemerisQuality::Fictional,
+        );
         let mut duration_seconds = 0.0;
         let mut arrival_time = departure_time.clone();
 
         for _ in 0..INTERCEPT_ITERATIONS {
-            if origin_state.frame != target_state.frame {
+            if origin_state.frame != arrival_state.frame {
                 return Err(QueryError::IncompatibleFrame {
                     ship_frame: frame_label(&origin_state.frame),
                     object: object.id.to_string(),
-                    object_frame: frame_label(&target_state.frame),
+                    object_frame: frame_label(&arrival_state.frame),
                 });
             }
             duration_seconds = transfer_duration_seconds(
-                origin_state.position_km.distance(target_state.position_km),
+                origin_state.position_km.distance(arrival_state.position_km),
                 acceleration_km_s2,
             );
             arrival_time = departure_time.add_seconds(duration_seconds);
             target_state = self.world.state(object.id.as_str(), arrival_time.clone())?;
+            arrival_state = orbit_insertion_state(
+                &target_state,
+                &object.id,
+                &arrival_orbit,
+                arrival_time.clone(),
+                EphemerisQuality::Fictional,
+            );
         }
 
-        Ok((arrival_time, target_state, duration_seconds))
+        Ok((arrival_time, arrival_state, duration_seconds, arrival_orbit))
     }
 
     pub fn location_summary(&self, at: GameTime) -> Result<LocationSummaryDto, QueryError> {
@@ -479,6 +548,7 @@ mod tests {
 
     use super::*;
     use crate::config::{demo_world, DEFAULT_GAME_TIME};
+    use crate::navigation::{ArrivalOrbitKind, ArrivalOrbitRequest};
 
     fn epoch() -> GameTime {
         GameTime::from_utc_iso8601(DEFAULT_GAME_TIME).unwrap()
@@ -699,6 +769,46 @@ frame = { type = "custom", value = "other" }
         assert_eq!(status.ship_name, "Wayfarer");
         assert_eq!(status.ship_motion, "orbiting");
         assert_eq!(status.object_count, 12);
+    }
+
+    #[test]
+    fn flight_plan_targets_arrival_orbit_and_resolves_entry_phases() {
+        let service = service();
+        let departure = epoch();
+        service
+            .create_flight_plan_with_options(
+                "mars",
+                departure.clone(),
+                0.02,
+                None,
+                ArrivalOrbitRequest::Low,
+            )
+            .unwrap();
+
+        let ship = service.player_ship();
+        let plan = ship.active_flight_plan().unwrap();
+        assert_eq!(plan.arrival_orbit.kind, ArrivalOrbitKind::Low);
+        assert!(plan.arrival_orbit.period_seconds.unwrap() > 0.0);
+
+        let mars_at_arrival = service
+            .world
+            .state("mars", plan.arrival_time.clone())
+            .unwrap();
+        let insertion_distance = plan
+            .target_state()
+            .position_km
+            .distance(mars_at_arrival.position_km);
+        assert!((insertion_distance - plan.arrival_orbit.radius_km).abs() < 1e-6);
+
+        let entering = service
+            .player_ship_state(plan.arrival_time.add_seconds(1.0))
+            .unwrap();
+        assert_eq!(entering.motion_mode, "entering_orbit");
+
+        let orbiting = service
+            .player_ship_state(plan.orbit_entry_time.add_seconds(1.0))
+            .unwrap();
+        assert_eq!(orbiting.motion_mode, "orbiting");
     }
 
     #[test]
