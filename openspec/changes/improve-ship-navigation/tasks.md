@@ -34,7 +34,7 @@
 
 ## 5. Validation and Documentation
 
-- [ ] 5.1 Update README or user-facing command documentation for G acceleration and orbit options.
-- [ ] 5.2 Run relevant Rust tests for `space-server`, `space-game-protocol`, and `space-client-tui`.
-- [ ] 5.3 Run `openspec validate --all` and resolve any validation issues.
-- [ ] 5.4 Review the change artifacts against the final implementation and update tasks/specs if behavior changes during implementation.
+- [x] 5.1 Update README or user-facing command documentation for G acceleration and orbit options.
+- [x] 5.2 Run relevant Rust tests for `space-server`, `space-game-protocol`, and `space-client-tui`.
+- [x] 5.3 Run `openspec validate --all` and resolve any validation issues.
+- [x] 5.4 Review the change artifacts against the final implementation and update tasks/specs if behavior changes during implementation.

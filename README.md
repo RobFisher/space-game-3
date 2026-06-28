@@ -13,8 +13,9 @@ The current build is a minimal networked vertical slice rather than a full game.
 
 The demo lets a client connect to the local server, list real minimal-profile
 celestial objects plus fictional stations, query distances from the player ship,
-create/cancel a basic flight plan to a known object, view ship/game-time status,
-rename the ship for the current server run, and exit cleanly.
+create/cancel a navigation flight plan to a known object and configurable
+circular arrival orbit, view ship/game-time status, rename the ship for the
+current server run, and exit cleanly.
 
 Supported TUI commands include:
 
@@ -33,6 +34,11 @@ ship status
 ship name Wayfarer
 flight plan mars
 flight plan mars --accel 0.02
+flight plan mars --accel 0.5g
+flight plan mars --orbit low
+flight plan mars --orbit stationary
+flight plan mars --orbit-altitude 400
+flight plan mars --orbit-radius 10000
 flight status
 flight cancel
 time
