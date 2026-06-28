@@ -18,11 +18,11 @@
 
 ## 3. Protocol and Server Commands
 
-- [ ] 3.1 Extend protocol DTOs with navigation phase, transfer arrival time, orbit entry completion time, acceleration in G, and arrival orbit estimate fields.
-- [ ] 3.2 Update protocol serialization tests for the extended flight plan and entering-orbit ship state messages.
-- [ ] 3.3 Extend server flight command parsing for `--accel 0.5g`, `--orbit`, `--orbit-altitude`, and `--orbit-radius`.
-- [ ] 3.4 Add clear server errors for invalid acceleration, invalid custom orbit values, and unsupported stationary orbit requests.
-- [ ] 3.5 Update server command/query tests for G acceleration, orbit presets, custom orbit requests, and flight-plan-aware queries during orbit entry.
+- [x] 3.1 Extend protocol DTOs with navigation phase, transfer arrival time, orbit entry completion time, acceleration in G, and arrival orbit estimate fields.
+- [x] 3.2 Update protocol serialization tests for the extended flight plan and entering-orbit ship state messages.
+- [x] 3.3 Extend server flight command parsing for `--accel 0.5g`, `--orbit`, `--orbit-altitude`, and `--orbit-radius`.
+- [x] 3.4 Add clear server errors for invalid acceleration, invalid custom orbit values, and unsupported stationary orbit requests.
+- [x] 3.5 Update server command/query tests for G acceleration, orbit presets, custom orbit requests, and flight-plan-aware queries during orbit entry.
 
 ## 4. TUI and Plain Client
 

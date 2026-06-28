@@ -5,7 +5,7 @@ use space_game_ephemeris::{
     StateVector,
 };
 use space_game_protocol::{
-    DistanceResultDto, DistanceSort, ErrorDto, FlightPlanDto, FlightPlanStatusDto,
+    ArrivalOrbitDto, DistanceResultDto, DistanceSort, ErrorDto, FlightPlanDto, FlightPlanStatusDto,
     FlightPlanTargetDto, LocationSummaryDto, ObjectSummaryDto, ShipStateDto, StatusDto,
 };
 use thiserror::Error;
@@ -514,14 +514,37 @@ pub fn flight_plan_to_dto(plan: &FlightPlan, at: &GameTime) -> FlightPlanDto {
         },
         departure_time: plan.departure_time.to_string(),
         arrival_time: plan.arrival_time.to_string(),
+        orbit_entry_time: plan.orbit_entry_time.to_string(),
         duration_seconds: plan.duration_seconds,
         acceleration_km_s2: plan.acceleration_km_s2,
+        acceleration_g: plan.acceleration_g,
         status: match plan.effective_status_at(at) {
             FlightPlanStatus::Active => FlightPlanStatusDto::Active,
             FlightPlanStatus::Completed => FlightPlanStatusDto::Completed,
             FlightPlanStatus::Cancelled => FlightPlanStatusDto::Cancelled,
         },
+        navigation_phase: flight_plan_phase(plan, at).to_string(),
+        arrival_orbit: Some(ArrivalOrbitDto {
+            kind: plan.arrival_orbit.kind.as_str().to_string(),
+            radius_km: plan.arrival_orbit.radius_km,
+            altitude_km: plan.arrival_orbit.altitude_km,
+            period_seconds: plan.arrival_orbit.period_seconds,
+            circular_speed_km_s: plan.arrival_orbit.circular_speed_km_s,
+        }),
         quality: Some(quality_label(plan.target_state().quality)),
+    }
+}
+
+fn flight_plan_phase(plan: &FlightPlan, at: &GameTime) -> &'static str {
+    if plan.status == FlightPlanStatus::Cancelled {
+        return "cancelled";
+    }
+    if at < &plan.arrival_time {
+        "flight_plan"
+    } else if at < &plan.orbit_entry_time {
+        "entering_orbit"
+    } else {
+        "orbiting"
     }
 }
 

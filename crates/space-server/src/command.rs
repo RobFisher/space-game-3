@@ -9,6 +9,7 @@ use space_game_protocol::{
     CompletionResponseDto, DistanceSort, ErrorDto, ReplacementSpanDto, ServerToClient, TimeUnit,
 };
 
+use crate::navigation::{parse_acceleration_input, AccelerationInput, ArrivalOrbitRequest};
 use crate::ship::DEFAULT_FLIGHT_ACCELERATION_KM_S2;
 use crate::{clock::SimulationClock, query::SolarSystemQueryService};
 
@@ -28,7 +29,7 @@ const SERVER_COMMANDS: &[&str] = &[
 ];
 const DISTANCE_OPTIONS: &[&str] = &["--at"];
 const DISTANCES_OPTIONS: &[&str] = &["--at", "--limit", "--sort"];
-const FLIGHT_PLAN_OPTIONS: &[&str] = &["--accel"];
+const FLIGHT_PLAN_OPTIONS: &[&str] = &["--accel", "--orbit", "--orbit-altitude", "--orbit-radius"];
 
 #[derive(Debug, thiserror::Error)]
 pub enum CommandError {
@@ -54,6 +55,10 @@ pub enum CommandError {
     MissingAcceleration,
     #[error("invalid acceleration: {0}")]
     InvalidAcceleration(String),
+    #[error("missing orbit option value")]
+    MissingOrbitValue,
+    #[error("invalid orbit: {0}")]
+    InvalidOrbit(String),
     #[error(transparent)]
     InvalidShipName(#[from] crate::ship::ShipNameError),
     #[error("unknown command: {0}")]
@@ -79,6 +84,8 @@ impl CommandError {
             | Self::MissingFlightSubcommand
             | Self::MissingAcceleration
             | Self::InvalidAcceleration(_)
+            | Self::MissingOrbitValue
+            | Self::InvalidOrbit(_)
             | Self::InvalidShipName(_)
             | Self::UnknownCommand(_)
             | Self::Time(_) => ErrorDto {
@@ -94,6 +101,8 @@ impl CommandError {
                     Self::MissingFlightSubcommand => "missing_flight_subcommand",
                     Self::MissingAcceleration => "missing_acceleration",
                     Self::InvalidAcceleration(_) => "invalid_acceleration",
+                    Self::MissingOrbitValue => "missing_orbit_value",
+                    Self::InvalidOrbit(_) => "invalid_orbit",
                     Self::InvalidShipName(_) => "invalid_ship_name",
                     Self::UnknownCommand(_) => "unknown_command",
                     Self::Time(_) => "invalid_game_time",
@@ -480,7 +489,7 @@ fn handle_command(
     match command.as_str() {
         "help" => Ok(vec![ServerToClient::OutputLine {
             seq: Some(seq),
-            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, ship [status|name <name>], flight plan <object> [--accel km_per_s2], flight status, flight cancel, time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
+            line: "Commands: help, objects, distance <object> [--at timestamp], distances [--limit n] [--sort name|distance] [--at timestamp], status, ship [status|name <name>], flight plan <object> [--accel km_per_s2|g] [--orbit default|low|stationary] [--orbit-altitude km] [--orbit-radius km], flight status, flight cancel, time, advance <amount> <seconds|minutes|hours|days>, where [object] [--at timestamp], quit".to_string(),
         }]),
         "objects" => Ok(vec![ServerToClient::Objects {
             seq,
@@ -580,11 +589,17 @@ fn handle_flight_command(
     match words.first().map(|word| word.to_ascii_lowercase()) {
         None => Err(CommandError::MissingFlightSubcommand),
         Some(command) if command == "plan" => {
-            let (query, acceleration_km_s2) = parse_flight_plan_args(&words[1..])?;
+            let args = parse_flight_plan_args(&words[1..])?;
             let at = clock_snapshot(clock).current_time;
             Ok(vec![ServerToClient::FlightPlan {
                 seq,
-                plan: Some(service.create_flight_plan(&query, at, acceleration_km_s2)?),
+                plan: Some(service.create_flight_plan_with_options(
+                    &args.query,
+                    at,
+                    args.acceleration.km_s2,
+                    args.acceleration.g,
+                    args.arrival_orbit_request,
+                )?),
             }])
         }
         Some(command) if command == "status" && words.len() == 1 => {
@@ -605,37 +620,93 @@ fn handle_flight_command(
     }
 }
 
-fn parse_flight_plan_args(words: &[&str]) -> Result<(String, f64), CommandError> {
-    let accel_index = words.iter().position(|word| *word == "--accel");
-    let (query_words, acceleration_km_s2) = match accel_index {
-        Some(index) => {
-            let value = words
-                .get(index + 1)
-                .ok_or(CommandError::MissingAcceleration)?;
-            if words.len() > index + 2 {
-                return Err(CommandError::UnknownCommand(format!(
-                    "flight plan {}",
-                    words[index + 2]
-                )));
-            }
-            let acceleration = value
-                .parse::<f64>()
-                .map_err(|_| CommandError::InvalidAcceleration((*value).to_string()))?;
-            (&words[..index], acceleration)
-        }
-        None => (words, DEFAULT_FLIGHT_ACCELERATION_KM_S2),
-    };
+#[derive(Debug, Clone, PartialEq)]
+struct FlightPlanArgs {
+    query: String,
+    acceleration: AccelerationInput,
+    arrival_orbit_request: ArrivalOrbitRequest,
+}
 
-    if !acceleration_km_s2.is_finite() || acceleration_km_s2 <= 0.0 {
-        return Err(CommandError::InvalidAcceleration(
-            acceleration_km_s2.to_string(),
-        ));
+fn parse_flight_plan_args(words: &[&str]) -> Result<FlightPlanArgs, CommandError> {
+    let mut query_words = Vec::new();
+    let mut acceleration = AccelerationInput {
+        km_s2: DEFAULT_FLIGHT_ACCELERATION_KM_S2,
+        g: None,
+    };
+    let mut arrival_orbit_request = ArrivalOrbitRequest::Default;
+    let mut index = 0;
+
+    while index < words.len() {
+        match words[index] {
+            "--accel" => {
+                let value = words
+                    .get(index + 1)
+                    .ok_or(CommandError::MissingAcceleration)?;
+                acceleration = parse_acceleration_input(value)
+                    .map_err(|_| CommandError::InvalidAcceleration((*value).to_string()))?;
+                index += 2;
+            }
+            "--orbit" => {
+                let value = words
+                    .get(index + 1)
+                    .ok_or(CommandError::MissingOrbitValue)?;
+                arrival_orbit_request = parse_orbit_preset(value)?;
+                index += 2;
+            }
+            "--orbit-altitude" => {
+                let value = words
+                    .get(index + 1)
+                    .ok_or(CommandError::MissingOrbitValue)?;
+                arrival_orbit_request =
+                    ArrivalOrbitRequest::CustomAltitudeKm(parse_orbit_value(value)?);
+                index += 2;
+            }
+            "--orbit-radius" => {
+                let value = words
+                    .get(index + 1)
+                    .ok_or(CommandError::MissingOrbitValue)?;
+                arrival_orbit_request =
+                    ArrivalOrbitRequest::CustomRadiusKm(parse_orbit_value(value)?);
+                index += 2;
+            }
+            word if word.starts_with("--") => {
+                return Err(CommandError::UnknownCommand(format!("flight plan {word}")));
+            }
+            word => {
+                query_words.push(word);
+                index += 1;
+            }
+        }
     }
 
     let query = (!query_words.is_empty())
         .then(|| query_words.join(" "))
         .ok_or(CommandError::MissingObjectQuery)?;
-    Ok((query, acceleration_km_s2))
+    Ok(FlightPlanArgs {
+        query,
+        acceleration,
+        arrival_orbit_request,
+    })
+}
+
+fn parse_orbit_preset(value: &str) -> Result<ArrivalOrbitRequest, CommandError> {
+    match value.to_ascii_lowercase().as_str() {
+        "default" => Ok(ArrivalOrbitRequest::Default),
+        "low" => Ok(ArrivalOrbitRequest::Low),
+        "stationary" | "geo" | "geosynchronous" => Ok(ArrivalOrbitRequest::Stationary),
+        other => Err(CommandError::InvalidOrbit(other.to_string())),
+    }
+}
+
+fn parse_orbit_value(value: &str) -> Result<f64, CommandError> {
+    let value = value
+        .parse::<f64>()
+        .map_err(|_| CommandError::InvalidOrbit(value.to_string()))?;
+    if value.is_finite() && value > 0.0 {
+        Ok(value)
+    } else {
+        Err(CommandError::InvalidOrbit(value.to_string()))
+    }
 }
 
 fn parse_distances_args(
@@ -1441,6 +1512,53 @@ mod tests {
     }
 
     #[test]
+    fn handles_flight_plan_command_with_g_acceleration() {
+        let service = service();
+        let responses =
+            handle_command_message(&service, &clock(), 60, "flight plan mars --accel 0.5g");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::FlightPlan {
+                seq: 60,
+                plan: Some(plan)
+            } if (plan.acceleration_km_s2 - 0.004_903_325).abs() < 1e-12
+                && plan.acceleration_g == Some(0.5)
+        ));
+    }
+
+    #[test]
+    fn handles_flight_plan_command_with_orbit_options() {
+        let service = service();
+        let low = handle_command_message(&service, &clock(), 61, "flight plan mars --orbit low");
+
+        assert!(matches!(
+            &low[1],
+            ServerToClient::FlightPlan {
+                seq: 61,
+                plan: Some(plan)
+            } if plan.arrival_orbit.as_ref().map(|orbit| orbit.kind.as_str()) == Some("low")
+                && plan.arrival_orbit.as_ref().unwrap().period_seconds.is_some()
+        ));
+
+        let custom = handle_command_message(
+            &service,
+            &clock(),
+            62,
+            "flight plan mars --orbit-radius 10000",
+        );
+
+        assert!(matches!(
+            &custom[1],
+            ServerToClient::FlightPlan {
+                seq: 62,
+                plan: Some(plan)
+            } if plan.arrival_orbit.as_ref().map(|orbit| orbit.kind.as_str()) == Some("custom")
+                && plan.arrival_orbit.as_ref().unwrap().radius_km == 10_000.0
+        ));
+    }
+
+    #[test]
     fn rejects_invalid_flight_acceleration_and_preserves_motion() {
         let service = service();
         let responses =
@@ -1457,6 +1575,36 @@ mod tests {
         assert!(matches!(
             &status[1],
             ServerToClient::FlightPlan { plan: None, .. }
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_orbit_options() {
+        let service = service();
+        let invalid =
+            handle_command_message(&service, &clock(), 63, "flight plan mars --orbit-radius 0");
+
+        assert!(matches!(
+            &invalid[1],
+            ServerToClient::Error {
+                seq: Some(63),
+                error
+            } if error.code == "invalid_orbit"
+        ));
+
+        let unsupported = handle_command_message(
+            &service,
+            &clock(),
+            64,
+            "flight plan demo-station --orbit stationary",
+        );
+
+        assert!(matches!(
+            &unsupported[1],
+            ServerToClient::Error {
+                seq: Some(64),
+                error
+            } if error.code == "unsupported_stationary_orbit"
         ));
     }
 

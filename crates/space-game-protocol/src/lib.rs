@@ -186,10 +186,23 @@ pub struct FlightPlanDto {
     pub target: FlightPlanTargetDto,
     pub departure_time: String,
     pub arrival_time: String,
+    pub orbit_entry_time: String,
     pub duration_seconds: f64,
     pub acceleration_km_s2: f64,
+    pub acceleration_g: Option<f64>,
     pub status: FlightPlanStatusDto,
+    pub navigation_phase: String,
+    pub arrival_orbit: Option<ArrivalOrbitDto>,
     pub quality: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ArrivalOrbitDto {
+    pub kind: String,
+    pub radius_km: f64,
+    pub altitude_km: Option<f64>,
+    pub period_seconds: Option<f64>,
+    pub circular_speed_km_s: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -375,11 +388,38 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                orbit_entry_time: "2097-01-01T03:10:00Z".to_string(),
                 duration_seconds: 10_800.0,
                 acceleration_km_s2: 0.02,
+                acceleration_g: Some(2.039_432_426),
                 status: FlightPlanStatusDto::Active,
+                navigation_phase: "flight_plan".to_string(),
+                arrival_orbit: Some(ArrivalOrbitDto {
+                    kind: "low".to_string(),
+                    radius_km: 3_789.5,
+                    altitude_km: Some(400.0),
+                    period_seconds: Some(7_113.0),
+                    circular_speed_km_s: Some(3.362),
+                }),
                 quality: Some("fictional".to_string()),
             }),
+        };
+
+        assert_eq!(round_trip(&msg), msg);
+    }
+
+    #[test]
+    fn entering_orbit_ship_state_round_trips() {
+        let msg = ServerToClient::ShipState {
+            seq: 16,
+            ship: ShipStateDto {
+                ship_id: "player-ship".to_string(),
+                ship_name: "Wayfarer".to_string(),
+                motion_mode: "entering_orbit".to_string(),
+                frame: "solar_system_barycentric_j2000".to_string(),
+                game_time: "2097-01-01T03:05:00Z".to_string(),
+                quality: Some("fictional".to_string()),
+            },
         };
 
         assert_eq!(round_trip(&msg), msg);
