@@ -303,7 +303,7 @@ fn format_phase_detail(current_time: &str, plan: &FlightPlanDto) -> String {
 fn format_transfer_dynamics(current_time: &str, plan: &FlightPlanDto) -> String {
     let acceleration = format_current_acceleration(current_time, plan);
     let speed = format_transfer_speed(current_time, plan);
-    format!("acceleration={acceleration} transfer_speed={speed}")
+    format!("acceleration={acceleration} path_speed={speed}")
 }
 
 fn format_current_acceleration(current_time: &str, plan: &FlightPlanDto) -> String {
@@ -521,7 +521,7 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["Flight plan flight-1: active to Mars (mars) phase=flight_plan acceleration=0.020 km/s^2 (2.039g) departure=2097-01-01T00:00:00Z arrival=2097-01-01T03:00:00Z orbit_entry=2097-01-01T03:10:00Z duration=10800s navigation=acceleration=0.020 km/s^2 (2.039g) accelerating transfer_speed=0.000 km/s"]
+            vec!["Flight plan flight-1: active to Mars (mars) phase=flight_plan acceleration=0.020 km/s^2 (2.039g) departure=2097-01-01T00:00:00Z arrival=2097-01-01T03:00:00Z orbit_entry=2097-01-01T03:10:00Z duration=10800s navigation=acceleration=0.020 km/s^2 (2.039g) accelerating path_speed=0.000 km/s"]
         );
     }
 

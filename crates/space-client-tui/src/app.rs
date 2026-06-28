@@ -456,7 +456,7 @@ fn format_phase_detail(current_time: &str, plan: &FlightPlanDto) -> String {
 fn format_transfer_dynamics(current_time: &str, plan: &FlightPlanDto) -> String {
     let acceleration = format_current_acceleration(current_time, plan);
     let speed = format_transfer_speed(current_time, plan);
-    format!("acceleration={acceleration} transfer_speed={speed}")
+    format!("acceleration={acceleration} path_speed={speed}")
 }
 
 fn format_current_acceleration(current_time: &str, plan: &FlightPlanDto) -> String {
@@ -902,7 +902,7 @@ mod tests {
                 && line.contains("phase=flight_plan")
                 && line.contains("acceleration=0.020 km/s^2 (2.039g)")
                 && line.contains("navigation=acceleration=0.020 km/s^2 (2.039g) accelerating")
-                && line.contains("transfer_speed=0.000 km/s")
+                && line.contains("path_speed=0.000 km/s")
                 && !line.contains("orbit=low")
         }));
         let location_line = app
@@ -1005,7 +1005,7 @@ mod tests {
                 "ETA: 2097-01-01T01:02:03Z".to_string(),
                 "Countdown: 01:02:03".to_string(),
                 "Distance: 69304 km".to_string(),
-                "Navigation: acceleration=0.020 km/s^2 accelerating transfer_speed=0.000 km/s"
+                "Navigation: acceleration=0.020 km/s^2 accelerating path_speed=0.000 km/s"
                     .to_string(),
             ]
         );
