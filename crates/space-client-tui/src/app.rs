@@ -2,7 +2,7 @@ use std::{io, time::Instant};
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use space_game_protocol::{
-    ClientToServer, CompletionCandidateDto, DistanceResultDto, LocationSummaryDto,
+    ArrivalOrbitDto, ClientToServer, CompletionCandidateDto, DistanceResultDto, LocationSummaryDto,
     ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto, StatusDto,
 };
 use space_game_protocol::{FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto};
@@ -326,6 +326,7 @@ impl ClientApp {
         } = &plan.target;
         vec![
             format!("Flight: {display_name} ({object_id})"),
+            format!("Phase: {}", plan.navigation_phase),
             format!("ETA: {}", plan.arrival_time),
             format!(
                 "Countdown: {}",
@@ -334,6 +335,10 @@ impl ClientApp {
             format!(
                 "Distance: {}",
                 format_remaining_distance(&self.display_game_time_at(now), plan)
+            ),
+            format!(
+                "Orbit: {}",
+                format_arrival_orbit(plan.arrival_orbit.as_ref())
             ),
         ]
     }
@@ -396,16 +401,63 @@ fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
         display_name,
     } = &plan.target;
     format!(
-        "Flight plan {}: {} to {} ({}) acceleration={:.3} km/s^2 departure={} arrival={} duration={:.0}s",
+        "Flight plan {}: {} to {} ({}) phase={} acceleration={} departure={} arrival={} orbit_entry={} duration={:.0}s orbit={}",
         plan.plan_id,
         flight_status_label(plan.status),
         display_name,
         object_id,
-        plan.acceleration_km_s2,
+        plan.navigation_phase,
+        format_acceleration(plan),
         plan.departure_time,
         plan.arrival_time,
-        plan.duration_seconds
+        plan.orbit_entry_time,
+        plan.duration_seconds,
+        format_arrival_orbit(plan.arrival_orbit.as_ref())
     )
+}
+
+fn format_acceleration(plan: &FlightPlanDto) -> String {
+    match plan.acceleration_g {
+        Some(g) => format!("{:.3} km/s^2 ({g:.3}g)", plan.acceleration_km_s2),
+        None => format!("{:.3} km/s^2", plan.acceleration_km_s2),
+    }
+}
+
+fn format_arrival_orbit(orbit: Option<&ArrivalOrbitDto>) -> String {
+    let Some(orbit) = orbit else {
+        return "-".to_string();
+    };
+    let mut parts = vec![format!("{} radius={:.0} km", orbit.kind, orbit.radius_km)];
+    if let Some(altitude_km) = orbit.altitude_km {
+        parts.push(format!("altitude={altitude_km:.0} km"));
+    }
+    if let Some(period_seconds) = orbit.period_seconds {
+        parts.push(format!(
+            "period={}",
+            format_duration_seconds(period_seconds)
+        ));
+    }
+    if let Some(speed) = orbit.circular_speed_km_s {
+        parts.push(format!("speed={speed:.3} km/s"));
+    }
+    parts.join(" ")
+}
+
+fn format_duration_seconds(seconds: f64) -> String {
+    if !seconds.is_finite() {
+        return "-".to_string();
+    }
+    let seconds = seconds.round().max(0.0) as i64;
+    let hours = seconds / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes:02}m {seconds:02}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds:02}s")
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn flight_status_label(status: FlightPlanStatusDto) -> &'static str {
@@ -487,9 +539,9 @@ mod tests {
     };
 
     use space_game_protocol::{
-        DistanceResultDto, ErrorDto, FlightPlanDto, FlightPlanStatusDto, FlightPlanTargetDto,
-        LocationSummaryDto, ObjectSummaryDto, ServerToClient, ShipStateDto, SimulationTimeDto,
-        StatusDto,
+        ArrivalOrbitDto, DistanceResultDto, ErrorDto, FlightPlanDto, FlightPlanStatusDto,
+        FlightPlanTargetDto, LocationSummaryDto, ObjectSummaryDto, ServerToClient, ShipStateDto,
+        SimulationTimeDto, StatusDto,
     };
 
     use super::*;
@@ -550,6 +602,8 @@ mod tests {
     fn submits_flight_commands() {
         let cases = [
             "flight plan mars --accel 0.02",
+            "flight plan mars --accel 0.5g --orbit low",
+            "flight plan mars --orbit-radius 10000",
             "flight status",
             "flight cancel",
         ];
@@ -750,9 +804,19 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                orbit_entry_time: "2097-01-01T03:10:00Z".to_string(),
                 duration_seconds: 10_800.0,
                 acceleration_km_s2: 0.02,
+                acceleration_g: Some(2.039),
                 status: FlightPlanStatusDto::Active,
+                navigation_phase: "flight_plan".to_string(),
+                arrival_orbit: Some(ArrivalOrbitDto {
+                    kind: "low".to_string(),
+                    radius_km: 3_789.5,
+                    altitude_km: Some(400.0),
+                    period_seconds: Some(7_113.0),
+                    circular_speed_km_s: Some(3.362),
+                }),
                 quality: Some("fictional".to_string()),
             }),
         });
@@ -775,7 +839,9 @@ mod tests {
             .any(|line| line.contains("Ship: Wayfarer")));
         assert!(app.output_lines.iter().any(|line| {
             line.contains("Flight plan flight-1: active to Mars")
-                && line.contains("acceleration=0.020 km/s^2")
+                && line.contains("phase=flight_plan")
+                && line.contains("acceleration=0.020 km/s^2 (2.039g)")
+                && line.contains("orbit=low radius=3790 km")
         }));
         let location_line = app
             .output_lines
@@ -808,9 +874,13 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T03:00:00Z".to_string(),
+                orbit_entry_time: "2097-01-01T03:10:00Z".to_string(),
                 duration_seconds: 10_800.0,
                 acceleration_km_s2: 0.02,
+                acceleration_g: None,
                 status: FlightPlanStatusDto::Cancelled,
+                navigation_phase: "cancelled".to_string(),
+                arrival_orbit: None,
                 quality: Some("fictional".to_string()),
             }),
         });
@@ -848,9 +918,19 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T01:02:03Z".to_string(),
+                orbit_entry_time: "2097-01-01T01:12:03Z".to_string(),
                 duration_seconds: 3_723.0,
                 acceleration_km_s2: 0.02,
+                acceleration_g: None,
                 status: FlightPlanStatusDto::Active,
+                navigation_phase: "flight_plan".to_string(),
+                arrival_orbit: Some(ArrivalOrbitDto {
+                    kind: "low".to_string(),
+                    radius_km: 3_789.5,
+                    altitude_km: Some(400.0),
+                    period_seconds: Some(7_113.0),
+                    circular_speed_km_s: Some(3.362),
+                }),
                 quality: Some("fictional".to_string()),
             }),
         });
@@ -859,9 +939,12 @@ mod tests {
             app.active_flight_status_lines(received_at),
             vec![
                 "Flight: Mars (mars)".to_string(),
+                "Phase: flight_plan".to_string(),
                 "ETA: 2097-01-01T01:02:03Z".to_string(),
                 "Countdown: 01:02:03".to_string(),
                 "Distance: 69304 km".to_string(),
+                "Orbit: low radius=3790 km altitude=400 km period=1h 58m 33s speed=3.362 km/s"
+                    .to_string(),
             ]
         );
 
@@ -890,9 +973,13 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T00:00:20Z".to_string(),
+                orbit_entry_time: "2097-01-01T00:10:20Z".to_string(),
                 duration_seconds: 20.0,
                 acceleration_km_s2: 2.0,
+                acceleration_g: None,
                 status: FlightPlanStatusDto::Active,
+                navigation_phase: "flight_plan".to_string(),
+                arrival_orbit: None,
                 quality: Some("fictional".to_string()),
             }),
         });
@@ -918,9 +1005,13 @@ mod tests {
                 },
                 departure_time: "2097-01-01T00:00:00Z".to_string(),
                 arrival_time: "2097-01-01T00:00:20Z".to_string(),
+                orbit_entry_time: "2097-01-01T00:10:20Z".to_string(),
                 duration_seconds: 20.0,
                 acceleration_km_s2: 2.0,
+                acceleration_g: None,
                 status: FlightPlanStatusDto::Active,
+                navigation_phase: "flight_plan".to_string(),
+                arrival_orbit: None,
                 quality: Some("fictional".to_string()),
             }),
         });

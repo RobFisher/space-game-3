@@ -26,11 +26,11 @@
 
 ## 4. TUI and Plain Client
 
-- [ ] 4.1 Update command help and completion candidates for G acceleration and orbit options.
-- [ ] 4.2 Update interactive flight plan output to show navigation phase, acceleration in G, orbit entry completion time, and arrival orbit summary.
-- [ ] 4.3 Update plain text flight plan output with deterministic navigation/orbit fields for assertions.
-- [ ] 4.4 Update the status pane to show navigation phase and arrival orbit period when known.
-- [ ] 4.5 Add or update client tests for plain output and command handling.
+- [x] 4.1 Update command help and completion candidates for G acceleration and orbit options.
+- [x] 4.2 Update interactive flight plan output to show navigation phase, acceleration in G, orbit entry completion time, and arrival orbit summary.
+- [x] 4.3 Update plain text flight plan output with deterministic navigation/orbit fields for assertions.
+- [x] 4.4 Update the status pane to show navigation phase and arrival orbit period when known.
+- [x] 4.5 Add or update client tests for plain output and command handling.
 
 ## 5. Validation and Documentation
 

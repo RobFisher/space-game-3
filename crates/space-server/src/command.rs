@@ -1349,6 +1349,39 @@ mod tests {
     }
 
     #[test]
+    fn completes_flight_plan_option_names() {
+        let response = handle_completion_request(
+            &service(),
+            CompletionRequestDto {
+                seq: 31,
+                input: "flight plan mars --or".to_string(),
+                cursor: 21,
+            },
+        );
+
+        match response {
+            ServerToClient::CompletionResponse(response) => {
+                assert_eq!(response.replacement.start, 17);
+                assert_eq!(response.replacement.end, 21);
+                let options = response
+                    .candidates
+                    .iter()
+                    .map(|candidate| candidate.insertion.as_str())
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    options,
+                    vec!["--orbit", "--orbit-altitude", "--orbit-radius"]
+                );
+                assert!(response
+                    .candidates
+                    .iter()
+                    .all(|candidate| candidate.kind == CompletionCandidateKindDto::Option));
+            }
+            other => panic!("unexpected response: {other:?}"),
+        }
+    }
+
+    #[test]
     fn returns_empty_completion_for_unsupported_context() {
         let response = handle_completion_request(
             &service(),
@@ -1445,6 +1478,20 @@ mod tests {
                 seq: Some(11),
                 error
             } if error.code == "unknown_command"
+        ));
+    }
+
+    #[test]
+    fn help_includes_navigation_options() {
+        let responses = handle_command_message(&service(), &clock(), 12, "help");
+
+        assert!(matches!(
+            &responses[1],
+            ServerToClient::OutputLine { line, .. }
+                if line.contains("--accel km_per_s2|g")
+                    && line.contains("--orbit default|low|stationary")
+                    && line.contains("--orbit-altitude km")
+                    && line.contains("--orbit-radius km")
         ));
     }
 
