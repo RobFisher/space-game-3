@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use color_eyre::eyre::{eyre, Result};
 use futures::{stream::Stream, Sink, SinkExt, StreamExt};
 use space_game_protocol::{
@@ -247,7 +248,7 @@ fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
         display_name,
     } = &plan.target;
     format!(
-        "Flight plan {}: {} to {} ({}) phase={} acceleration={} departure={} arrival={} orbit_entry={} duration={:.0}s orbit={}",
+        "Flight plan {}: {} to {} ({}) phase={} acceleration={} departure={} arrival={} orbit_entry={} duration={:.0}s navigation={}",
         plan.plan_id,
         flight_status_label(plan.status),
         display_name,
@@ -258,7 +259,7 @@ fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
         plan.arrival_time,
         plan.orbit_entry_time,
         plan.duration_seconds,
-        format_arrival_orbit(plan.arrival_orbit.as_ref())
+        format_phase_detail(&plan.departure_time, plan)
     )
 }
 
@@ -287,6 +288,74 @@ fn format_arrival_orbit(orbit: Option<&ArrivalOrbitDto>) -> String {
         parts.push(format!("speed={speed:.3} km/s"));
     }
     parts.join(" ")
+}
+
+fn format_phase_detail(current_time: &str, plan: &FlightPlanDto) -> String {
+    match plan.navigation_phase.as_str() {
+        "flight_plan" => format_transfer_dynamics(current_time, plan),
+        "entering_orbit" => "Entering orbit".to_string(),
+        "orbiting" => format_arrival_orbit(plan.arrival_orbit.as_ref()),
+        "cancelled" => "Cancelled".to_string(),
+        _ => "-".to_string(),
+    }
+}
+
+fn format_transfer_dynamics(current_time: &str, plan: &FlightPlanDto) -> String {
+    let acceleration = format_current_acceleration(current_time, plan);
+    let speed = format_transfer_speed(current_time, plan);
+    format!("acceleration={acceleration} transfer_speed={speed}")
+}
+
+fn format_current_acceleration(current_time: &str, plan: &FlightPlanDto) -> String {
+    if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
+        return "0.000 km/s^2".to_string();
+    }
+    let Some(normalized) = normalized_flight_progress(current_time, plan) else {
+        return "-".to_string();
+    };
+    let direction = if normalized < 0.5 {
+        "accelerating"
+    } else {
+        "decelerating"
+    };
+    format!("{} {direction}", format_acceleration(plan))
+}
+
+fn format_transfer_speed(current_time: &str, plan: &FlightPlanDto) -> String {
+    let Some(speed_km_s) = transfer_speed_km_s(current_time, plan) else {
+        return "-".to_string();
+    };
+    format!("{speed_km_s:.3} km/s")
+}
+
+fn transfer_speed_km_s(current_time: &str, plan: &FlightPlanDto) -> Option<f64> {
+    if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
+        return Some(0.0);
+    }
+    let normalized = normalized_flight_progress(current_time, plan)?;
+    let total_distance_km =
+        plan.acceleration_km_s2 * (plan.duration_seconds / 2.0) * (plan.duration_seconds / 2.0);
+    Some(total_distance_km * ease_in_out_accel_decel_derivative(normalized) / plan.duration_seconds)
+}
+
+fn normalized_flight_progress(current_time: &str, plan: &FlightPlanDto) -> Option<f64> {
+    let current = DateTime::parse_from_rfc3339(current_time)
+        .ok()?
+        .with_timezone(&Utc);
+    let departure = DateTime::parse_from_rfc3339(&plan.departure_time)
+        .ok()?
+        .with_timezone(&Utc);
+    let elapsed_seconds =
+        current.signed_duration_since(departure).num_milliseconds() as f64 / 1_000.0;
+    Some((elapsed_seconds / plan.duration_seconds).clamp(0.0, 1.0))
+}
+
+fn ease_in_out_accel_decel_derivative(normalized: f64) -> f64 {
+    if normalized < 0.5 {
+        4.0 * normalized
+    } else {
+        4.0 * (1.0 - normalized)
+    }
 }
 
 fn format_duration_seconds(seconds: f64) -> String {
@@ -452,8 +521,56 @@ mod tests {
 
         assert_eq!(
             lines,
-            vec!["Flight plan flight-1: active to Mars (mars) phase=flight_plan acceleration=0.020 km/s^2 (2.039g) departure=2097-01-01T00:00:00Z arrival=2097-01-01T03:00:00Z orbit_entry=2097-01-01T03:10:00Z duration=10800s orbit=low radius=3790 km altitude=400 km period=1h 58m 33s speed=3.362 km/s"]
+            vec!["Flight plan flight-1: active to Mars (mars) phase=flight_plan acceleration=0.020 km/s^2 (2.039g) departure=2097-01-01T00:00:00Z arrival=2097-01-01T03:00:00Z orbit_entry=2097-01-01T03:10:00Z duration=10800s navigation=acceleration=0.020 km/s^2 (2.039g) accelerating transfer_speed=0.000 km/s"]
         );
+    }
+
+    #[test]
+    fn formats_phase_specific_navigation_details() {
+        let base_plan = FlightPlanDto {
+            plan_id: "flight-1".to_string(),
+            ship_id: "player-ship".to_string(),
+            target: FlightPlanTargetDto::Object {
+                object_id: "mars".to_string(),
+                display_name: "Mars".to_string(),
+            },
+            departure_time: "2097-01-01T00:00:00Z".to_string(),
+            arrival_time: "2097-01-01T03:00:00Z".to_string(),
+            orbit_entry_time: "2097-01-01T03:10:00Z".to_string(),
+            duration_seconds: 10_800.0,
+            acceleration_km_s2: 0.02,
+            acceleration_g: None,
+            status: FlightPlanStatusDto::Active,
+            navigation_phase: "entering_orbit".to_string(),
+            arrival_orbit: Some(ArrivalOrbitDto {
+                kind: "low".to_string(),
+                radius_km: 3_789.5,
+                altitude_km: Some(400.0),
+                period_seconds: Some(7_113.0),
+                circular_speed_km_s: Some(3.362),
+            }),
+            quality: Some("fictional".to_string()),
+        };
+
+        let entering = plain_output_lines(
+            &ServerToClient::FlightPlan {
+                seq: 9,
+                plan: Some(base_plan.clone()),
+            },
+            9,
+        );
+        assert!(entering[0].contains("navigation=Entering orbit"));
+
+        let mut orbiting_plan = base_plan;
+        orbiting_plan.navigation_phase = "orbiting".to_string();
+        let orbiting = plain_output_lines(
+            &ServerToClient::FlightPlan {
+                seq: 10,
+                plan: Some(orbiting_plan),
+            },
+            10,
+        );
+        assert!(orbiting[0].contains("navigation=low radius=3790 km"));
     }
 
     #[test]

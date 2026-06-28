@@ -38,3 +38,10 @@
 - [x] 5.2 Run relevant Rust tests for `space-server`, `space-game-protocol`, and `space-client-tui`.
 - [x] 5.3 Run `openspec validate --all` and resolve any validation issues.
 - [x] 5.4 Review the change artifacts against the final implementation and update tasks/specs if behavior changes during implementation.
+
+## 6. Flight Display Refinement
+
+- [x] 6.1 Update active transfer display to show current planned acceleration and transfer speed instead of arrival orbit details.
+- [x] 6.2 Update entering-orbit display to show an entering-orbit indicator instead of arrival orbit details.
+- [x] 6.3 Keep arrival orbit details visible once the flight plan has reached orbiting phase.
+- [x] 6.4 Run affected client tests and `openspec validate --all`.

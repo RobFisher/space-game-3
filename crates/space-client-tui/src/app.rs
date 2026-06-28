@@ -337,8 +337,8 @@ impl ClientApp {
                 format_remaining_distance(&self.display_game_time_at(now), plan)
             ),
             format!(
-                "Orbit: {}",
-                format_arrival_orbit(plan.arrival_orbit.as_ref())
+                "Navigation: {}",
+                format_phase_detail(&self.display_game_time_at(now), plan)
             ),
         ]
     }
@@ -401,7 +401,7 @@ fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
         display_name,
     } = &plan.target;
     format!(
-        "Flight plan {}: {} to {} ({}) phase={} acceleration={} departure={} arrival={} orbit_entry={} duration={:.0}s orbit={}",
+        "Flight plan {}: {} to {} ({}) phase={} acceleration={} departure={} arrival={} orbit_entry={} duration={:.0}s navigation={}",
         plan.plan_id,
         flight_status_label(plan.status),
         display_name,
@@ -412,7 +412,7 @@ fn format_flight_plan(plan: Option<&FlightPlanDto>) -> String {
         plan.arrival_time,
         plan.orbit_entry_time,
         plan.duration_seconds,
-        format_arrival_orbit(plan.arrival_orbit.as_ref())
+        format_phase_detail(&plan.departure_time, plan)
     )
 }
 
@@ -441,6 +441,44 @@ fn format_arrival_orbit(orbit: Option<&ArrivalOrbitDto>) -> String {
         parts.push(format!("speed={speed:.3} km/s"));
     }
     parts.join(" ")
+}
+
+fn format_phase_detail(current_time: &str, plan: &FlightPlanDto) -> String {
+    match plan.navigation_phase.as_str() {
+        "flight_plan" => format_transfer_dynamics(current_time, plan),
+        "entering_orbit" => "Entering orbit".to_string(),
+        "orbiting" => format_arrival_orbit(plan.arrival_orbit.as_ref()),
+        "cancelled" => "Cancelled".to_string(),
+        _ => "-".to_string(),
+    }
+}
+
+fn format_transfer_dynamics(current_time: &str, plan: &FlightPlanDto) -> String {
+    let acceleration = format_current_acceleration(current_time, plan);
+    let speed = format_transfer_speed(current_time, plan);
+    format!("acceleration={acceleration} transfer_speed={speed}")
+}
+
+fn format_current_acceleration(current_time: &str, plan: &FlightPlanDto) -> String {
+    if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
+        return "0.000 km/s^2".to_string();
+    }
+    let Some(normalized) = normalized_flight_progress(current_time, plan) else {
+        return "-".to_string();
+    };
+    let direction = if normalized < 0.5 {
+        "accelerating"
+    } else {
+        "decelerating"
+    };
+    format!("{} {direction}", format_acceleration(plan))
+}
+
+fn format_transfer_speed(current_time: &str, plan: &FlightPlanDto) -> String {
+    let Some(speed_km_s) = transfer_speed_km_s(current_time, plan) else {
+        return "-".to_string();
+    };
+    format!("{speed_km_s:.3} km/s")
 }
 
 fn format_duration_seconds(seconds: f64) -> String {
@@ -508,6 +546,23 @@ fn remaining_distance_km(current_time: &str, plan: &FlightPlanDto) -> Option<f64
     if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
         return Some(0.0);
     }
+    let normalized = normalized_flight_progress(current_time, plan)?;
+    let total_distance_km =
+        plan.acceleration_km_s2 * (plan.duration_seconds / 2.0) * (plan.duration_seconds / 2.0);
+    Some(total_distance_km * (1.0 - ease_in_out_accel_decel(normalized)))
+}
+
+fn transfer_speed_km_s(current_time: &str, plan: &FlightPlanDto) -> Option<f64> {
+    if plan.duration_seconds <= 0.0 || plan.acceleration_km_s2 <= 0.0 {
+        return Some(0.0);
+    }
+    let normalized = normalized_flight_progress(current_time, plan)?;
+    let total_distance_km =
+        plan.acceleration_km_s2 * (plan.duration_seconds / 2.0) * (plan.duration_seconds / 2.0);
+    Some(total_distance_km * ease_in_out_accel_decel_derivative(normalized) / plan.duration_seconds)
+}
+
+fn normalized_flight_progress(current_time: &str, plan: &FlightPlanDto) -> Option<f64> {
     let current = DateTime::parse_from_rfc3339(current_time)
         .ok()?
         .with_timezone(&Utc);
@@ -516,10 +571,7 @@ fn remaining_distance_km(current_time: &str, plan: &FlightPlanDto) -> Option<f64
         .with_timezone(&Utc);
     let elapsed_seconds =
         current.signed_duration_since(departure).num_milliseconds() as f64 / 1_000.0;
-    let normalized = (elapsed_seconds / plan.duration_seconds).clamp(0.0, 1.0);
-    let total_distance_km =
-        plan.acceleration_km_s2 * (plan.duration_seconds / 2.0) * (plan.duration_seconds / 2.0);
-    Some(total_distance_km * (1.0 - ease_in_out_accel_decel(normalized)))
+    Some((elapsed_seconds / plan.duration_seconds).clamp(0.0, 1.0))
 }
 
 fn ease_in_out_accel_decel(normalized: f64) -> f64 {
@@ -527,6 +579,14 @@ fn ease_in_out_accel_decel(normalized: f64) -> f64 {
         2.0 * normalized * normalized
     } else {
         1.0 - 2.0 * (1.0 - normalized) * (1.0 - normalized)
+    }
+}
+
+fn ease_in_out_accel_decel_derivative(normalized: f64) -> f64 {
+    if normalized < 0.5 {
+        4.0 * normalized
+    } else {
+        4.0 * (1.0 - normalized)
     }
 }
 
@@ -841,7 +901,9 @@ mod tests {
             line.contains("Flight plan flight-1: active to Mars")
                 && line.contains("phase=flight_plan")
                 && line.contains("acceleration=0.020 km/s^2 (2.039g)")
-                && line.contains("orbit=low radius=3790 km")
+                && line.contains("navigation=acceleration=0.020 km/s^2 (2.039g) accelerating")
+                && line.contains("transfer_speed=0.000 km/s")
+                && !line.contains("orbit=low")
         }));
         let location_line = app
             .output_lines
@@ -943,13 +1005,69 @@ mod tests {
                 "ETA: 2097-01-01T01:02:03Z".to_string(),
                 "Countdown: 01:02:03".to_string(),
                 "Distance: 69304 km".to_string(),
-                "Orbit: low radius=3790 km altitude=400 km period=1h 58m 33s speed=3.362 km/s"
+                "Navigation: acceleration=0.020 km/s^2 accelerating transfer_speed=0.000 km/s"
                     .to_string(),
             ]
         );
 
         app.apply_server_message(ServerToClient::FlightPlan { seq: 2, plan: None });
         assert!(app.active_flight_status_lines(received_at).is_empty());
+    }
+
+    #[test]
+    fn active_flight_status_lines_are_phase_specific() {
+        let mut app = ClientApp::default();
+        let received_at = Instant::now();
+        app.clock_sample = Some(ClientClockSample {
+            current_time: "2097-01-01T01:05:00Z".to_string(),
+            received_at,
+            running: false,
+            rate: 1.0,
+        });
+
+        let base_plan = FlightPlanDto {
+            plan_id: "flight-1".to_string(),
+            ship_id: "player-ship".to_string(),
+            target: FlightPlanTargetDto::Object {
+                object_id: "mars".to_string(),
+                display_name: "Mars".to_string(),
+            },
+            departure_time: "2097-01-01T00:00:00Z".to_string(),
+            arrival_time: "2097-01-01T01:00:00Z".to_string(),
+            orbit_entry_time: "2097-01-01T01:10:00Z".to_string(),
+            duration_seconds: 3_600.0,
+            acceleration_km_s2: 0.02,
+            acceleration_g: None,
+            status: FlightPlanStatusDto::Active,
+            navigation_phase: "entering_orbit".to_string(),
+            arrival_orbit: Some(ArrivalOrbitDto {
+                kind: "low".to_string(),
+                radius_km: 3_789.5,
+                altitude_km: Some(400.0),
+                period_seconds: Some(7_113.0),
+                circular_speed_km_s: Some(3.362),
+            }),
+            quality: Some("fictional".to_string()),
+        };
+
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 1,
+            plan: Some(base_plan.clone()),
+        });
+        assert!(app
+            .active_flight_status_lines(received_at)
+            .contains(&"Navigation: Entering orbit".to_string()));
+
+        let mut orbiting_plan = base_plan;
+        orbiting_plan.navigation_phase = "orbiting".to_string();
+        app.apply_server_message(ServerToClient::FlightPlan {
+            seq: 2,
+            plan: Some(orbiting_plan),
+        });
+        assert!(app.active_flight_status_lines(received_at).contains(
+            &"Navigation: low radius=3790 km altitude=400 km period=1h 58m 33s speed=3.362 km/s"
+                .to_string()
+        ));
     }
 
     #[test]
