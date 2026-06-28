@@ -1,11 +1,11 @@
 ## 1. Navigation Module
 
-- [ ] 1.1 Add a dedicated server navigation module and wire it into the server crate module tree.
-- [ ] 1.2 Implement acceleration parsing/conversion helpers for km/s² values and `g`-suffixed values.
-- [ ] 1.3 Add navigation profile types for maximum acceleration and optional specific impulse validation.
-- [ ] 1.4 Add arrival orbit request and resolved orbit estimate types for default, low, stationary, and custom circular orbits.
-- [ ] 1.5 Implement circular orbit estimate calculations for radius, altitude, period, and circular speed when required constants are available.
-- [ ] 1.6 Add unit tests for acceleration conversion, invalid engine/profile values, orbit preset resolution, and orbital estimate calculations.
+- [x] 1.1 Add a dedicated server navigation module and wire it into the server crate module tree.
+- [x] 1.2 Implement acceleration parsing/conversion helpers for km/s² values and `g`-suffixed values.
+- [x] 1.3 Add navigation profile types for maximum acceleration and optional specific impulse validation.
+- [x] 1.4 Add arrival orbit request and resolved orbit estimate types for default, low, stationary, and custom circular orbits.
+- [x] 1.5 Implement circular orbit estimate calculations for radius, altitude, period, and circular speed when required constants are available.
+- [x] 1.6 Add unit tests for acceleration conversion, invalid engine/profile values, orbit preset resolution, and orbital estimate calculations.
 
 ## 2. Flight Plan Model and State Resolution
 
